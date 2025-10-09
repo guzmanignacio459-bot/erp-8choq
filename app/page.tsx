@@ -58,6 +58,15 @@ export default function RemitosApp() {
   }, [items, header.costoEnvio]);
 
   const handleHeader = (k: keyof typeof header, v: any) => setHeader(p => ({...p, [k]: v}));
+type UIEvent = React.ChangeEvent<HTMLInputElement | HTMLSelectElement>;
+
+const onHeader =
+  (key: 'nombre'|'fecha'|'dni'|'envio'|'metodoPago'|'provinciaLocalidad'|'vendedor'|'costoEnvio') =>
+  (e: UIEvent) => {
+    const target = e.target as HTMLInputElement;
+    const val = target.type === 'number' ? Number(target.value || 0) : target.value;
+    handleHeader(key, val);
+  };
 
   const normalizeItem = (it: Item) => {
     const cantidad = SIZE_KEYS.reduce((acc, s) => acc + (Number(it.sizes[s])||0), 0);
@@ -94,6 +103,16 @@ ID: ${data.remitoId}`:''));
     }
   };
 
+ type UIEvent = React.ChangeEvent<HTMLInputElement | HTMLSelectElement>;
+
+const onHeader =
+  (key: 'nombre'|'fecha'|'dni'|'envio'|'metodoPago'|'provinciaLocalidad'|'vendedor'|'costoEnvio') =>
+  (e: UIEvent) => {
+    const target = e.target as HTMLInputElement;
+    const val =
+      target.type === 'number' ? Number(target.value || 0) : target.value;
+    handleHeader(key, val);
+  };
   return (
     <div className="min-h-screen bg-neutral-50 p-3 md:p-6 print:p-0">
       <div className="mx-auto max-w-7xl">
@@ -153,86 +172,64 @@ ID: ${data.remitoId}`:''));
             </div>
           </div>
         </div>
-
-        {/* Tabla espejo */}
-        <div className="mt-4 rounded-2xl bg-white shadow border border-neutral-200 overflow-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="bg-neutral-100 text-neutral-700">
-                <Th className="w-[9%]">CODIGO</Th>
-                <Th className="w-[20%]">ARTICULO</Th>
-                <Th className="w-[8%] text-right">A PAGAR</Th>
-                {SIZE_KEYS.map(s => <Th key={s} className="text-right w-[5%]">{s}</Th>)}
-                <Th className="w-[7%] text-right">CANTIDAD</Th>
-                <Th className="w-[10%] text-right">TOTAL</Th>
-                <Th className="w-[16%]">DETALLE</Th>
-              </tr>
-            </thead>
-            <tbody>
-              {items.map((it, i) => (
-                <tr key={it.id} className="border-b last:border-b-0">
-                  <Td><input className="cell" value={it.codigo} onChange={e=>updateItem(it.id, x=>({ ...x, codigo: e.target.value }))} placeholder="TP0214"/></Td>
-                  <Td><input className="cell" value={it.articulo} onChange={e=>updateItem(it.id, x=>({ ...x, articulo: e.target.value }))} placeholder="Top Roma Blanco"/></Td>
-                  <Td><input type="number" className="cell text-right" value={it.precio} onChange={e=>updateItem(it.id, x=>({ ...x, precio: Number(e.target.value) }))}/></Td>
-                  {SIZE_KEYS.map(s => (
-                    <Td key={s}><input type="number" min={0} className="cell text-right w-16" value={it.sizes[s]} onChange={e=>updateItem(it.id, x=>({ ...x, sizes: { ...x.sizes, [s]: Number(e.target.value) } }))}/></Td>
-                  ))}
-                  <Td className="text-right tabular-nums">{it.cantidad}</Td>
-                  <Td className="text-right tabular-nums font-semibold">${it.total.toLocaleString('es-AR')}</Td>
-                  <Td><input className="cell" value={it.detalle} onChange={e=>updateItem(it.id, x=>({ ...x, detalle: e.target.value }))} placeholder="Notas"/></Td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          <div className="flex items-center justify-between p-3">
-            <button onClick={addRow} className="btn">+ Agregar fila</button>
-            <button onClick={clearTable} className="btn-secondary">Limpiar</button>
-          </div>
-        </div>
-
-        {/* Totales espejo */}
-        <div className="mt-3 grid grid-cols-12 gap-3">
-          <div className="col-span-12 md:col-span-8"></div>
-          <div className="col-span-12 md:col-span-4">
-            <div className="rounded-2xl bg-white shadow border border-neutral-200 p-3">
-              <Row label="TOTAL PRENDAS" value={totals.totalPrendas.toString()} />
-              <Row label="SUBTOTAL" value={`$${totals.subtotal.toLocaleString('es-AR')}`} />
-              <Row label="ENVÍO" value={`$${totals.envio.toLocaleString('es-AR')}`} />
-              <Row label="TOTAL" value={`$${totals.total.toLocaleString('es-AR')}`} strong />
-            </div>
-          </div>
-        </div>
-
-        {/* Acciones */}
-        <div className="mt-4 flex flex-col md:flex-row gap-3 justify-end">
-          <button onClick={onSubmit} className="btn-primary">Marcar como PAGADO y Guardar</button>
-          <button onClick={()=>window.print()} className="btn-secondary">Imprimir / PDF</button>
-        </div>
-
-        <footer className="text-center text-xs text-neutral-500 mt-6 mb-2">8CHOQ · Remitos · {new Date().getFullYear()}</footer>
-      </div>
-
-      <style jsx global>{`
-        .input { @apply w-full rounded-xl border border-neutral-300 bg-white px-3 py-2 outline-none focus:ring-2 focus:ring-black/10; }
-        .cell { @apply w-full rounded-lg border border-neutral-200 bg-white px-2 py-1 outline-none focus:ring-2 focus:ring-black/10; }
-        .btn { @apply rounded-xl bg-neutral-900 text-white px-4 py-2 shadow hover:bg-neutral-800; }
-        .btn-secondary { @apply rounded-xl bg-neutral-100 text-neutral-800 px-4 py-2 hover:bg-neutral-200; }
-        .btn-primary { @apply rounded-xl bg-black text-white px-5 py-2.5 shadow hover:bg-neutral-800 text-sm font-semibold; }
-        table th, table td { @apply px-2 py-2; }
-        @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } .btn, .btn-primary, .btn-secondary { display:none; } .shadow{box-shadow:none;} }
-      `}</style>
+{/* Encabezado espejo planilla */}
+<div className="rounded-2xl bg-white shadow p-3 md:p-5 border border-neutral-200">
+  <div className="grid grid-cols-12 gap-2">
+    <div className="col-span-12 md:col-span-4">
+      <Label>NOMBRE</Label>
+      <Input value={header.nombre} onChange={onHeader('nombre')} placeholder="Cliente" />
     </div>
-  );
-}
 
-function Label({children}:{children:React.ReactNode}){ return <div className="text-[11px] font-semibold tracking-wide text-neutral-600 mb-0.5">{children}</div>; }
-function Input(props:any){ return <input {...props} className={`input ${props.className||''}`} />; }
-function Select(props:any){ return <select {...props} className={`input ${props.className||''}`} />; }
-function Th({ children, className='' }: { children: React.ReactNode; className?: string }) { return <th className={`text-left font-semibold text-xs md:text-sm tracking-wide ${className}`}>{children}</th>; }
-function Td({ children, className='' }: { children: React.ReactNode; className?: string }) { return <td className={`align-middle ${className}`}>{children}</td>; }
-function Row({ label, value, strong }: { label: string; value: string; strong?: boolean }) { return (
-  <div className="flex items-center justify-between border-b border-neutral-200 py-2 last:border-b-0">
-    <span className="text-sm text-neutral-600">{label}</span>
-    <span className={`tabular-nums ${strong ? 'text-xl font-bold' : 'font-medium'}`}>{value}</span>
+    <div className="col-span-12 md:col-span-4 md:col-start-9">
+      <Label>ENVÍO</Label>
+      <Input value={header.envio} onChange={onHeader('envio')} placeholder="Correo/Retiro" />
+    </div>
+
+    <div className="col-span-12 md:col-span-4">
+      <Label>FECHA</Label>
+      <Input type="date" value={header.fecha} onChange={onHeader('fecha')} />
+    </div>
+
+    <div className="col-span-12 md:col-span-4 md:col-start-9">
+      <Label>MÉTODO DE PAGO</Label>
+      <Select value={header.metodoPago} onChange={onHeader('metodoPago')}>
+        <option value="">Seleccionar…</option>
+        <option>MP 3 Cuotas</option>
+        <option>Transferencia</option>
+        <option>Débito MP</option>
+        <option>Efectivo</option>
+        <option>Crédito</option>
+      </Select>
+    </div>
+
+    <div className="col-span-12 md:col-span-4">
+      <Label>DNI</Label>
+      <Input value={header.dni} onChange={onHeader('dni')} />
+    </div>
+
+    <div className="col-span-12 md:col-span-4 md:col-start-9">
+      <Label>PROVINCIA / LOCALIDAD</Label>
+      <Input value={header.provinciaLocalidad} onChange={onHeader('provinciaLocalidad')} placeholder="Mendoza - Godoy Cruz" />
+    </div>
+
+    <div className="col-span-12">
+      <div className="grid grid-cols-12 gap-2 items-end">
+        <div className="col-span-12 md:col-span-4">
+          <Label>VENDEDOR</Label>
+          <Select value={header.vendedor} onChange={onHeader('vendedor')}>
+            <option value="">Seleccionar…</option>
+            <option>Nacho</option>
+            <option>Vendedor 2</option>
+            <option>Vendedor 3</option>
+          </Select>
+        </div>
+        <div className="col-span-12 md:col-span-4 md:col-start-9">
+          <Label>COSTO DE ENVÍO ($)</Label>
+          <Input type="number" value={header.costoEnvio} onChange={onHeader('costoEnvio')} />
+        </div>
+      </div>
+    </div>
   </div>
-); }
+</div>
+
+       
