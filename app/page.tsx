@@ -1,10 +1,11 @@
 'use client';
 import React, { useMemo, useState } from 'react';
 
-// ---------- Tipos ----------
+/* =========================
+   Tipos / Constantes
+========================= */
 type SizeKey = 'S' | 'M' | 'L' | 'XL' | 'XXL' | 'XXXL';
 const SIZE_KEYS: SizeKey[] = ['S', 'M', 'L', 'XL', 'XXL', 'XXXL'];
-const WEBHOOK = process.env.NEXT_PUBLIC_REMITOS_WEBHOOK_URL || '';
 
 type DescuentoTipo = '' | 'mayorista' | 'minorista';
 
@@ -31,7 +32,11 @@ type Item = {
   detalle?: string;
 };
 
-// ---------- Helpers ----------
+const WEBHOOK = process.env.NEXT_PUBLIC_REMITOS_WEBHOOK_URL || '';
+
+/* =========================
+   Helpers
+========================= */
 const emptyItem = (): Item => ({
   id:
     typeof crypto !== 'undefined' && 'randomUUID' in crypto
@@ -46,7 +51,9 @@ const emptyItem = (): Item => ({
   detalle: '',
 });
 
-// ---------- Página ----------
+/* =========================
+   Página
+========================= */
 export default function Page() {
   const [header, setHeader] = useState<Header>({
     nombre: '',
@@ -98,9 +105,11 @@ export default function Page() {
     return { totalPrendas, subtotal, descuento, envio, total };
   }, [items, header.costoEnvio, header.descuentoTipo]);
 
-  // ---------- Envío a Google Apps Script ----------
+  /* =========================
+     Envío a Google Sheets
+  ========================= */
   const onSubmit = async () => {
-    if (!WEBHOOK) return alert('⚠️ Configurá NEXT_PUBLIC_REMITOS_WEBHOOK_URL en Vercel');
+    if (!WEBHOOK) return alert('⚠️ Configurá NEXT_PUBLIC_REMITOS_WEBHOOK_URL en Vercel.');
     if (!header.nombre) return alert('Completá NOMBRE');
 
     const payload = {
@@ -132,65 +141,79 @@ export default function Page() {
     }
   };
 
-  // ---------- PDF ----------
+  /* =========================
+     Descargar PDF
+  ========================= */
   const handleDownloadPDF = async () => {
     const el = document.getElementById('remito');
     if (!el) return;
-    const [{ jsPDF }, html2canvas] = await Promise.all([
-      import('jspdf'),
-      import('html2canvas').then((m) => m.default),
-    ]);
 
-    // Capturamos el contenedor al ancho A4 virtual (máx. 794px aprox. a 96dpi)
-    const canvas = await html2canvas(el, { scale: 2, backgroundColor: '#ffffff' });
-    const imgData = canvas.toDataURL('image/png');
+    try {
+      // imports dinámicos — funcionan sólo si las deps están instaladas
+      const [{ jsPDF }, html2canvasMod] = await Promise.all([
+        import('jspdf'),
+        import('html2canvas'),
+      ]);
+      const html2canvas = (html2canvasMod as any).default ?? (html2canvasMod as any);
 
-    const pdf = new jsPDF('p', 'mm', 'a4');
-    const pageWidth = pdf.internal.pageSize.getWidth();   // ~210mm
-    const pageHeight = pdf.internal.pageSize.getHeight(); // ~297mm
+      // A4 a 96dpi ≈ 794px ancho. El contenedor ya está en 780px de ancho.
+      const canvas = await html2canvas(el, { scale: 2, backgroundColor: '#ffffff' });
+      const imgData = canvas.toDataURL('image/png');
 
-    const imgW = pageWidth;
-    const imgH = (canvas.height * imgW) / canvas.width;
+      const pdf = new jsPDF('p', 'mm', 'a4');
+      const pageWidth = pdf.internal.pageSize.getWidth();
+      const pageHeight = pdf.internal.pageSize.getHeight();
 
-    let position = 0;
-    if (imgH <= pageHeight) {
-      pdf.addImage(imgData, 'PNG', 0, 0, imgW, imgH);
-    } else {
-      // Si se pasa, lo partimos en varias páginas
-      let y = 0;
-      const sliceHeightPx = Math.floor((pageHeight * canvas.width) / pageWidth); // px que entran por página
-      while (y < canvas.height) {
-        const slice = document.createElement('canvas');
-        slice.width = canvas.width;
-        slice.height = Math.min(sliceHeightPx, canvas.height - y);
-        const ctx = slice.getContext('2d')!;
-        ctx.drawImage(
-          canvas,
-          0,
-          y,
-          canvas.width,
-          slice.height,
-          0,
-          0,
-          canvas.width,
-          slice.height
-        );
-        const img = slice.toDataURL('image/png');
-        if (position > 0) pdf.addPage();
-        pdf.addImage(img, 'PNG', 0, 0, imgW, (slice.height * imgW) / canvas.width);
-        position++;
-        y += sliceHeightPx;
+      const imgW = pageWidth;
+      const imgH = (canvas.height * imgW) / canvas.width;
+
+      if (imgH <= pageHeight) {
+        pdf.addImage(imgData, 'PNG', 0, 0, imgW, imgH);
+      } else {
+        // si se excede, lo partimos en varias páginas
+        let y = 0;
+        const sliceHeightPx = Math.floor((pageHeight * canvas.width) / pageWidth);
+        let page = 0;
+
+        while (y < canvas.height) {
+          const slice = document.createElement('canvas');
+          slice.width = canvas.width;
+          slice.height = Math.min(sliceHeightPx, canvas.height - y);
+          const ctx = slice.getContext('2d')!;
+          ctx.drawImage(
+            canvas,
+            0,
+            y,
+            canvas.width,
+            slice.height,
+            0,
+            0,
+            canvas.width,
+            slice.height
+          );
+          const img = slice.toDataURL('image/png');
+          if (page > 0) pdf.addPage();
+          pdf.addImage(img, 'PNG', 0, 0, imgW, (slice.height * imgW) / canvas.width);
+          page++;
+          y += sliceHeightPx;
+        }
       }
-    }
 
-    const safeName = (header.nombre || 'Cliente').replace(/[^\p{L}\p{N}\-_ ]/gu, '').trim();
-    const filename = `Remito-${safeName}-${header.fecha}.pdf`;
-    pdf.save(filename);
+      const safeName = (header.nombre || 'Cliente').replace(/[^\p{L}\p{N}\-_ ]/gu, '').trim();
+      const filename = `Remito-${safeName}-${header.fecha}.pdf`;
+      pdf.save(filename);
+    } catch (err) {
+      console.error(err);
+      alert(
+        'Para descargar PDF necesitás instalar dependencias:\n' +
+          'npm i jspdf html2canvas   (o yarn add jspdf html2canvas)'
+      );
+    }
   };
 
   return (
     <>
-      {/* Global para impresión A4 */}
+      {/* Reglas globales para impresión A4 */}
       <style jsx global>{`
         @media print {
           html,
@@ -214,25 +237,24 @@ export default function Page() {
             <h1 style={styles.h1}>Sistema de Remitos 8CHOQ</h1>
           </div>
 
-          {/* Card de encabezado (dos columnas simétricas) */}
+          {/* Card encabezado: 2 columnas simétricas */}
           <div style={styles.card}>
             <div style={styles.grid12}>
-              {/* Columna izquierda (6/12) */}
+              {/* Columna izquierda */}
               <div style={styles.col6}>
-                <div style={styles.field}>
-                  <Label>NOMBRE</Label>
+                <Field label="NOMBRE">
                   <Input value={header.nombre} onChange={onHeader('nombre')} placeholder="Cliente" />
-                </div>
-                <div style={styles.field}>
-                  <Label>FECHA</Label>
+                </Field>
+
+                <Field label="FECHA">
                   <Input type="date" value={header.fecha} onChange={onHeader('fecha')} />
-                </div>
-                <div style={styles.field}>
-                  <Label>DNI</Label>
+                </Field>
+
+                <Field label="DNI">
                   <Input value={header.dni} onChange={onHeader('dni')} />
-                </div>
-                <div style={styles.field}>
-                  <Label>VENDEDOR</Label>
+                </Field>
+
+                <Field label="VENDEDOR">
                   <Select value={header.vendedor} onChange={onHeader('vendedor')}>
                     <option value="">Seleccionar…</option>
                     <option>Nacho</option>
@@ -242,21 +264,20 @@ export default function Page() {
                     <option>Vendedor 2</option>
                     <option>Vendedor 3</option>
                   </Select>
-                </div>
-                <div style={styles.field}>
-                  <Label>DESCUENTO</Label>
+                </Field>
+
+                <Field label="DESCUENTO">
                   <Select value={header.descuentoTipo} onChange={onHeader('descuentoTipo')}>
                     <option value="">Sin descuento</option>
                     <option value="mayorista">Mayorista (5%)</option>
                     <option value="minorista">Minorista (10%)</option>
                   </Select>
-                </div>
+                </Field>
               </div>
 
-              {/* Columna derecha (6/12) */}
+              {/* Columna derecha */}
               <div style={styles.col6}>
-                <div style={styles.field}>
-                  <Label>ENVÍO</Label>
+                <Field label="ENVÍO">
                   <Select value={header.envio} onChange={onHeader('envio')}>
                     <option value="">Seleccionar…</option>
                     <option>Correo - Sucursal</option>
@@ -268,9 +289,9 @@ export default function Page() {
                     <option>Retira</option>
                     <option>Domicilio</option>
                   </Select>
-                </div>
-                <div style={styles.field}>
-                  <Label>MÉTODO DE PAGO</Label>
+                </Field>
+
+                <Field label="MÉTODO DE PAGO">
                   <Select value={header.metodoPago} onChange={onHeader('metodoPago')}>
                     <option value="">Seleccionar…</option>
                     <option>MP 1 Cuota</option>
@@ -281,24 +302,24 @@ export default function Page() {
                     <option>Efectivo</option>
                     <option>Crédito</option>
                   </Select>
-                </div>
-                <div style={styles.field}>
-                  <Label>PROVINCIA / LOCALIDAD</Label>
+                </Field>
+
+                <Field label="PROVINCIA / LOCALIDAD">
                   <Input
                     value={header.provinciaLocalidad}
                     onChange={onHeader('provinciaLocalidad')}
                     placeholder="Mendoza - Godoy Cruz"
                   />
-                </div>
-                <div style={styles.field}>
-                  <Label>COSTO DE ENVÍO ($)</Label>
+                </Field>
+
+                <Field label="COSTO DE ENVÍO ($)">
                   <Input type="number" value={header.costoEnvio} onChange={onHeader('costoEnvio')} />
-                </div>
+                </Field>
               </div>
             </div>
           </div>
 
-          {/* Tabla de ítems */}
+          {/* Tabla de items */}
           <div style={{ ...styles.card, marginTop: 12, overflow: 'hidden' }}>
             <div style={{ overflowX: 'auto' }}>
               <table style={styles.table}>
@@ -341,6 +362,7 @@ export default function Page() {
                           onChange={(e) => updateItem(it.id, (x) => ({ ...x, precio: Number(e.target.value || 0) }))}
                         />
                       </Td>
+
                       {SIZE_KEYS.map((s) => (
                         <Td key={s}>
                           <Input
@@ -355,6 +377,7 @@ export default function Page() {
                           />
                         </Td>
                       ))}
+
                       <Td style={{ textAlign: 'right' }}>{it.cantidad}</Td>
                       <Td style={{ textAlign: 'right', fontWeight: 700 }}>
                         ${it.total.toLocaleString('es-AR')}
@@ -376,7 +399,7 @@ export default function Page() {
               <button onClick={addRow} style={btn}>
                 + Agregar fila
               </button>
-              <button onClick={clearTable} style={btnSecondary}>
+              <button onClick={clearTable} style={btnLight}>
                 Limpiar
               </button>
             </div>
@@ -397,7 +420,7 @@ export default function Page() {
           </div>
         </div>
 
-        {/* Acciones (fuera del contenedor capturado para PDF si querés) */}
+        {/* Acciones (afuera de #remito para no incluirse en el PDF) */}
         <div style={{ ...styles.actionsBar }}>
           <button onClick={onSubmit} style={btnPrimary}>
             Marcar como PAGADO y Guardar
@@ -405,7 +428,7 @@ export default function Page() {
           <button onClick={handleDownloadPDF} style={btnSecondary}>
             Descargar PDF
           </button>
-          <button onClick={() => window.print()} style={btnLight}>
+          <button onClick={() => window.print()} style={btn}>
             Imprimir
           </button>
         </div>
@@ -418,7 +441,9 @@ export default function Page() {
   );
 }
 
-// ---------- UI helpers & styles ----------
+/* =========================
+   UI helpers & estilos
+========================= */
 const styles = {
   page: {
     background: '#ffffff',
@@ -426,7 +451,7 @@ const styles = {
     color: '#111',
     fontFamily: 'system-ui, -apple-system, Segoe UI, Roboto, sans-serif',
   } as React.CSSProperties,
-  // ancho pensado para A4: ~794px; usamos 780 para márgenes
+  // ancho pensado para A4 (~794px a 96dpi). Dejamos 780 para márgenes internos.
   container: { maxWidth: 780, margin: '0 auto', padding: '20px 16px' } as React.CSSProperties,
   h1: { fontSize: 22, fontWeight: 800, margin: 0 } as React.CSSProperties,
   card: { background: '#fafafa', border: '1px solid #ddd', borderRadius: 12, padding: 12 } as React.CSSProperties,
@@ -457,16 +482,19 @@ const baseInput: React.CSSProperties = {
   outline: 'none',
 };
 
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div style={styles.field}>
+      <div style={{ fontSize: 11, fontWeight: 700, color: '#475569', marginBottom: 4 }}>{label}</div>
+      {children}
+    </div>
+  );
+}
 function Input(props: React.InputHTMLAttributes<HTMLInputElement>) {
   return <input {...props} style={{ ...baseInput, ...(props.style || {}) }} />;
 }
 function Select(props: React.SelectHTMLAttributes<HTMLSelectElement>) {
   return <select {...props} style={{ ...baseInput, ...(props.style || {}) }} />;
-}
-function Label({ children }: { children: React.ReactNode }) {
-  return (
-    <div style={{ fontSize: 11, fontWeight: 700, color: '#475569', marginBottom: 4 }}>{children}</div>
-  );
 }
 function Th({ children, style }: { children: React.ReactNode; style?: React.CSSProperties }) {
   return <th style={{ padding: '8px 6px', borderBottom: '1px solid #e5e7eb', ...style }}>{children}</th>;
@@ -483,7 +511,8 @@ function Row({ label, value, strong }: { label: string; value: string; strong?: 
   );
 }
 
-const btn: React.CSSProperties = { background: '#111827', color: '#fff', padding: '8px 12px', borderRadius: 10, border: 0 };
+const btn: React.CSSProperties = { background: '#111827', color: '#fff', padding: '9px 12px', borderRadius: 10, border: 0, fontWeight: 700 };
 const btnSecondary: React.CSSProperties = { background: '#1d4ed8', color: '#fff', padding: '9px 12px', borderRadius: 10, border: 0, fontWeight: 700 };
 const btnPrimary: React.CSSProperties = { background: '#16a34a', color: '#fff', padding: '10px 14px', borderRadius: 10, border: 0, fontWeight: 800 };
 const btnLight: React.CSSProperties = { background: '#e5e7eb', color: '#111', padding: '9px 12px', borderRadius: 10, border: 0, fontWeight: 700 };
+
