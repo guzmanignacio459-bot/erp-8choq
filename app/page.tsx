@@ -88,8 +88,8 @@ export default function Page() {
   const updateItem = (id: string, up: (x: Item) => Item) =>
     setItems((prev) => prev.map((i) => (i.id === id ? normalizeItem(up({ ...i })) : i)));
 
-  const addRow = () => setItems((p) => [...p, emptyItem()]);
-  const clearTable = () => setItems(Array.from({ length: 12 }, emptyItem()));
+const addRow = () => setItems((p) => [...p, emptyItem()]);
+const clearTable = () => setItems(Array.from({ length: 12 }, () => emptyItem()));
 
   const totals = useMemo(() => {
     const totalPrendas = items.reduce((a, i) => a + i.cantidad, 0);
