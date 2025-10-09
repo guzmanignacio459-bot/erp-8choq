@@ -1,7 +1,6 @@
 "use client";
 import { useState, useMemo } from "react";
 import Image from "next/image";
-import logo8CHOQ from "../public/LOGO 8Q .png";
 
 type Item = {
   codigo: string;
