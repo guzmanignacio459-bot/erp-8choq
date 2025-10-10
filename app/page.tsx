@@ -3,48 +3,48 @@
 import { useMemo, useState } from "react";
 import Image from "next/image";
 
-/** ==== Tipos ==== */
+/** ======== Tipos ========= */
 type Item = {
   codigo: string;
   articulo: string;
   aPagar: number;
-  talles: { [key: string]: number };
+  talles: { [k: string]: number };
   cantidad: number;
   total: number;
   notas: string;
 };
 
-/** Fila vacía */
-const emptyItem = (): Item => ({
-  codigo: "",
-  articulo: "",
-  aPagar: 0,
-  talles: { S: 0, M: 0, L: 0, XL: 0, XXL: 0 },
-  cantidad: 0,
-  total: 0,
-  notas: "",
-});
-
-/** ==== Página ==== */
+/** ======== Página ========= */
 export default function Remito8CHOQ() {
-  /** ===== Estado ===== */
-  // 8 filas para que entre en 1 A4
+  /* ------- estado ------- */
+  const emptyItem = (): Item => ({
+    codigo: "",
+    articulo: "",
+    aPagar: 0,
+    talles: { S: 0, M: 0, L: 0, XL: 0, XXL: 0, XXXL: 0 },
+    cantidad: 0,
+    total: 0,
+    notas: "",
+  });
+
+  // 8 filas (entra perfecto en A4)
   const [items, setItems] = useState<Item[]>(
     Array.from({ length: 8 }, () => emptyItem())
   );
+
   const [cliente, setCliente] = useState("");
   const [fecha, setFecha] = useState(
-    new Date().toISOString().slice(0, 10) // yyyy-mm-dd para <input type="date">
+    new Date().toISOString().slice(0, 10) // yyyy-mm-dd -> date picker
   );
   const [dni, setDni] = useState("");
   const [vendedor, setVendedor] = useState("");
   const [envio, setEnvio] = useState("");
   const [metodoPago, setMetodoPago] = useState("");
   const [provincia, setProvincia] = useState("Mendoza");
-  const [costoEnvio, setCostoEnvio] = useState<number>(0);
-  const [descuento, setDescuento] = useState<number>(0); // 0, 5, 10
+  const [costoEnvio, setCostoEnvio] = useState(0);
+  const [descuento, setDescuento] = useState(0);
 
-  /** ===== Opciones ===== */
+  /* ------- catálogos ------- */
   const vendedores = ["Nacho", "Santi", "Paula", "Malena"];
   const envios = [
     "Correo - Sucursal",
@@ -62,7 +62,7 @@ export default function Remito8CHOQ() {
     "Transferencia 1",
     "Transferencia 2",
     "Efectivo",
-    "Debito",
+    "Débito",
     "QR",
   ];
   const descuentos = [
@@ -71,56 +71,40 @@ export default function Remito8CHOQ() {
     { label: "Minorista 10%", value: 10 },
   ];
 
-  /** ===== Handlers ===== */
-  const setItemField = <K extends keyof Item>(
-    idx: number,
-    key: K,
-    value: Item[K]
-  ) => {
-    setItems((prev) => {
-      const next = [...prev];
-      next[idx] = { ...next[idx], [key]: value };
-      // Recalcular cantidad/total si cambiaron talles/aPagar
-      const t = next[idx].talles;
-      const cantidad =
-        (t.S || 0) + (t.M || 0) + (t.L || 0) + (t.XL || 0) + (t.XXL || 0);
-      const total = (next[idx].aPagar || 0) * cantidad;
-      next[idx].cantidad = cantidad;
-      next[idx].total = total;
-      return next;
-    });
+  /* ------- helpers ------- */
+  const updateItem = (idx: number, patch: Partial<Item>) => {
+    setItems((p) =>
+      p.map((it, i) => (i === idx ? { ...it, ...patch } : it))
+    );
   };
 
-  const setItemTalle = (idx: number, talle: keyof Item["talles"], val: number) =>
-    setItems((prev) => {
-      const next = [...prev];
-      const n = { ...next[idx] };
-      n.talles = { ...n.talles, [talle]: val };
-      const cant =
-        (n.talles.S || 0) +
-        (n.talles.M || 0) +
-        (n.talles.L || 0) +
-        (n.talles.XL || 0) +
-        (n.talles.XXL || 0);
-      n.cantidad = cant;
-      n.total = (n.aPagar || 0) * cant;
-      next[idx] = n;
-      return next;
-    });
+  const handleQty = (
+    row: number,
+    key: keyof Item["talles"],
+    delta: number
+  ) => {
+    setItems((prev) =>
+      prev.map((it, i) => {
+        if (i !== row) return it;
+        const next = Math.max(0, (it.talles[key] ?? 0) + delta);
+        const talles = { ...it.talles, [key]: next };
+        const cantidad = Object.values(talles).reduce((a, b) => a + b, 0);
+        const total = cantidad * (it.aPagar || 0);
+        return { ...it, talles, cantidad, total };
+      })
+    );
+  };
 
-  const clearTable = () =>
-    setItems(Array.from({ length: 8 }, () => emptyItem()));
-
-  /** ===== Totales ===== */
+  /* ------- totales ------- */
   const totals = useMemo(() => {
-    const totalPrendas = items.reduce((a, i) => a + (i.cantidad || 0), 0);
-    const subtotal = items.reduce((a, i) => a + (i.total || 0), 0);
-    const descMonto = Math.round((subtotal * (descuento || 0)) / 100);
-    const total = subtotal - descMonto + (costoEnvio || 0);
-    return { totalPrendas, subtotal, descMonto, total };
+    const prendas = items.reduce((a, i) => a + i.cantidad, 0);
+    const subtotal = items.reduce((a, i) => a + i.total, 0);
+    const desc = Math.round((subtotal * descuento) / 100);
+    const total = Math.max(0, subtotal - desc + (costoEnvio || 0));
+    return { prendas, subtotal, desc, total };
   }, [items, descuento, costoEnvio]);
 
-  /** ===== Descargar PDF (html2canvas + jsPDF) ===== */
+  /* ------- PDF ------- */
   const handleDownloadPDF = async () => {
     const el = document.getElementById("remito-container");
     if (!el) return;
@@ -133,41 +117,117 @@ export default function Remito8CHOQ() {
     const html2canvas =
       (html2canvasMod as any).default ?? (html2canvasMod as any);
 
-    // Capturamos en escala 2 para que salga nítido
+    // ancho A4 ~ 794px @96dpi; capturamos a 2x para nitidez
     const canvas = await html2canvas(el, { scale: 2 });
     const imgData = canvas.toDataURL("image/png");
-
-    // A4: 210 x 297 mm
     const pdf = new jsPDF("p", "mm", "a4");
-    const pageWidth = 210;
-    const imgProps = pdf.getImageProperties(imgData);
+
+    const pageWidth = 210; // mm
+    const imgProps = (pdf as any).getImageProperties(imgData);
     const pdfHeight = (imgProps.height * pageWidth) / imgProps.width;
 
     pdf.addImage(imgData, "PNG", 0, 0, pageWidth, pdfHeight);
     pdf.save(`Remito-${cliente || "8CHOQ"}.pdf`);
   };
 
+  /* ------- UI helpers ------- */
+  const QtyControl = ({
+    value,
+    onInc,
+    onDec,
+    label,
+  }: {
+    value: number;
+    onInc: () => void;
+    onDec: () => void;
+    label?: string;
+  }) => (
+    <div className="qty">
+      {/* etiqueta de talle arriba en pantallas chicas */}
+      {label ? <span className="qtyLabel">{label}</span> : null}
+      <button type="button" className="qtyBtn" onClick={onDec} aria-label="menos">
+        –
+      </button>
+      <input className="qtyInput" readOnly value={value} />
+      <button type="button" className="qtyBtn" onClick={onInc} aria-label="más">
+        +
+      </button>
+      <style jsx>{`
+        .qty {
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;                /* <-- ESPACIO ENTRE CONTROLES */
+          border: 1px solid #e6e6e6;
+          border-radius: 8px;
+          padding: 4px 6px;
+          background: #fff;
+          min-width: 88px;         /* ancho mínimo para que quepan los 3 */
+          justify-content: center;
+        }
+        .qtyLabel {
+          display: none;
+          font-size: 10px;
+          color: #666;
+          margin-right: 4px;
+        }
+        .qtyBtn {
+          width: 24px;
+          height: 24px;
+          border: 1px solid #e1e1e1;
+          background: #fafafa;
+          border-radius: 6px;
+          line-height: 1;
+          font-size: 16px;
+        }
+        .qtyInput {
+          width: 28px;
+          text-align: center;
+          border: none;
+          background: transparent;
+          font-weight: 600;
+        }
+        @media (max-width: 680px) {
+          .qty {
+            min-width: 76px;
+            gap: 4px;
+          }
+          .qtyLabel {
+            display: inline;
+          }
+        }
+      `}</style>
+    </div>
+  );
+
+  /* ------- layout ------- */
   return (
-    <div className="page">
+    <div className="wrap">
       <div id="remito-container" className="sheet">
-        {/* Header: logo + título */}
-        <div className="topbar">
+        {/* Header */}
+        <div className="header">
           <div className="brand">
-            {/* Si el logo no aparece, confirmá que exista /public/logo-8choq.png */}
-            <Image
-              src="/logo-8choq.png"
-              alt="8CHOQ"
-              width={70}
-              height={28}
-              priority
-            />
+            {/* logo si existe */}
+            <div className="logoBox">
+              {/* si el .png está en /public, mostralo; si no, fallback */}
+              <Image
+                src="/logo-8choq.png"
+                alt="8CHOQ"
+                width={90}
+                height={40}
+                onError={(e) => {
+                  (e.target as HTMLImageElement).style.display = "none";
+                }}
+                priority
+              />
+              <span className="logoFallback">8CHOQ</span>
+            </div>
+            <h1>Sistema de Remitos 8CHOQ (Prototipo)</h1>
           </div>
-          <h1>Sistema de Remitos 8CHOQ (Prototipo)</h1>
         </div>
 
-        {/* Datos del remito */}
-        <section className="card grid-2">
-          <div className="field">
+        {/* Datos */}
+        <section className="card grid2">
+          <div>
             <label>Nombre</label>
             <input
               value={cliente}
@@ -175,7 +235,8 @@ export default function Remito8CHOQ() {
               placeholder="Cliente"
             />
           </div>
-          <div className="field">
+
+          <div>
             <label>Fecha</label>
             <input
               type="date"
@@ -184,7 +245,7 @@ export default function Remito8CHOQ() {
             />
           </div>
 
-          <div className="field">
+          <div>
             <label>DNI</label>
             <input
               value={dni}
@@ -192,19 +253,18 @@ export default function Remito8CHOQ() {
               placeholder="DNI"
             />
           </div>
-          <div className="field">
+
+          <div>
             <label>Envío</label>
             <select value={envio} onChange={(e) => setEnvio(e.target.value)}>
               <option value="">Seleccionar...</option>
-              {envios.map((o) => (
-                <option key={o} value={o}>
-                  {o}
-                </option>
+              {envios.map((v) => (
+                <option key={v}>{v}</option>
               ))}
             </select>
           </div>
 
-          <div className="field">
+          <div>
             <label>Vendedor</label>
             <select
               value={vendedor}
@@ -212,41 +272,39 @@ export default function Remito8CHOQ() {
             >
               <option value="">Seleccionar...</option>
               {vendedores.map((v) => (
-                <option key={v} value={v}>
-                  {v}
-                </option>
+                <option key={v}>{v}</option>
               ))}
             </select>
           </div>
-          <div className="field">
+
+          <div>
             <label>Método de Pago</label>
             <select
               value={metodoPago}
               onChange={(e) => setMetodoPago(e.target.value)}
             >
               <option value="">Seleccionar...</option>
-              {metodosPago.map((m) => (
-                <option key={m} value={m}>
-                  {m}
-                </option>
+              {metodosPago.map((v) => (
+                <option key={v}>{v}</option>
               ))}
             </select>
           </div>
 
-          <div className="field">
+          <div>
             <label>Descuento</label>
             <select
               value={descuento}
               onChange={(e) => setDescuento(Number(e.target.value))}
             >
               {descuentos.map((d) => (
-                <option key={d.value} value={d.value}>
+                <option key={d.label} value={d.value}>
                   {d.label}
                 </option>
               ))}
             </select>
           </div>
-          <div className="field grid-2-span">
+
+          <div>
             <label>Provincia / Localidad</label>
             <input
               value={provincia}
@@ -255,142 +313,185 @@ export default function Remito8CHOQ() {
             />
           </div>
 
-          <div className="field">
+          <div>
             <label>Costo de Envío ($)</label>
             <input
               type="number"
+              min={0}
               value={costoEnvio}
               onChange={(e) => setCostoEnvio(Number(e.target.value || 0))}
-              min={0}
             />
           </div>
         </section>
 
-        {/* Tabla compacta para entrar en A4 */}
-        <section className="card">
+        {/* Tabla */}
+        <section className="card tableCard">
           <table className="table">
             <thead>
               <tr>
-                <th style={{ width: 100 }}>Código</th>
-                <th style={{ width: 240 }}>Artículo</th>
-                <th style={{ width: 70 }}>A Pagar</th>
+                <th style={{ width: 140 }}>Código</th>
+                <th style={{ width: 320 }}>Artículo</th>
+                <th style={{ width: 90 }}>A Pagar</th>
                 <th>S</th>
                 <th>M</th>
                 <th>L</th>
                 <th>XL</th>
                 <th>XXL</th>
+                <th>XXXL</th>
                 <th style={{ width: 70 }}>Cant</th>
-                <th style={{ width: 75 }}>Total</th>
+                <th style={{ width: 90 }}>Total</th>
               </tr>
             </thead>
             <tbody>
-              {items.map((it, idx) => (
-                <tr key={idx}>
+              {items.map((row, i) => (
+                <tr key={i}>
                   <td>
                     <input
-                      className="i"
-                      value={it.codigo}
-                      onChange={(e) => setItemField(idx, "codigo", e.target.value)}
+                      value={row.codigo}
+                      onChange={(e) => updateItem(i, { codigo: e.target.value })}
                       placeholder="Código"
                     />
                   </td>
                   <td>
                     <input
-                      className="i"
-                      value={it.articulo}
+                      value={row.articulo}
                       onChange={(e) =>
-                        setItemField(idx, "articulo", e.target.value)
+                        updateItem(i, { articulo: e.target.value })
                       }
                       placeholder="Artículo"
                     />
                   </td>
                   <td>
                     <input
-                      className="i num"
                       type="number"
                       min={0}
-                      value={it.aPagar}
-                      onChange={(e) =>
-                        setItemField(idx, "aPagar", Number(e.target.value || 0))
-                      }
+                      value={row.aPagar}
+                      onChange={(e) => {
+                        const aPagar = Number(e.target.value || 0);
+                        const total = row.cantidad * aPagar;
+                        updateItem(i, { aPagar, total });
+                      }}
                     />
                   </td>
-                  {(["S", "M", "L", "XL", "XXL"] as const).map((t) => (
+
+                  {(["S", "M", "L", "XL", "XXL", "XXXL"] as const).map((t) => (
                     <td key={t}>
-                      <input
-                        className="i num size"
-                        type="number"
-                        min={0}
-                        value={it.talles[t] || 0}
-                        onChange={(e) =>
-                          setItemTalle(idx, t, Number(e.target.value || 0))
-                        }
+                      <QtyControl
+                        value={row.talles[t]}
+                        label={t}
+                        onDec={() => handleQty(i, t, -1)}
+                        onInc={() => handleQty(i, t, +1)}
                       />
                     </td>
                   ))}
-                  <td className="right">{it.cantidad || 0}</td>
-                  <td className="right">${it.total || 0}</td>
+
+                  <td className="num">{row.cantidad}</td>
+                  <td className="num">
+                    ${new Intl.NumberFormat("es-AR").format(row.total)}
+                  </td>
                 </tr>
               ))}
             </tbody>
           </table>
         </section>
 
-        {/* Totales */}
-        <section className="totales">
-          <div>Total Prendas: {totals.totalPrendas}</div>
-          <div>Subtotal: ${totals.subtotal}</div>
-          <div>Descuento: -${totals.descMonto}</div>
-          <div>Envío: ${costoEnvio}</div>
-          <div className="total">TOTAL: ${totals.total}</div>
+        {/* Footer: resumen alineado a la derecha */}
+        <section className="footerRow">
+          <div className="totalsCard">
+            <div className="r">
+              <span>Total prendas</span>
+              <b>{totals.prendas}</b>
+            </div>
+            <div className="r">
+              <span>Subtotal</span>
+              <b>${new Intl.NumberFormat("es-AR").format(totals.subtotal)}</b>
+            </div>
+            <div className="r">
+              <span>Descuento</span>
+              <b>-$
+                {new Intl.NumberFormat("es-AR").format(totals.desc)}
+              </b>
+            </div>
+            <div className="r">
+              <span>Envío</span>
+              <b>${new Intl.NumberFormat("es-AR").format(costoEnvio)}</b>
+            </div>
+            <div className="r total">
+              <span>TOTAL</span>
+              <b>${new Intl.NumberFormat("es-AR").format(totals.total)}</b>
+            </div>
+          </div>
         </section>
       </div>
 
-      {/* Acciones (no se imprimen) */}
+      {/* acciones */}
       <div className="actions no-print">
-        <button className="ghost" onClick={clearTable}>
+        <button className="btn" onClick={handleDownloadPDF}>
+          Descargar PDF
+        </button>
+        <button
+          className="btn ghost"
+          onClick={() => {
+            setItems(Array.from({ length: 8 }, () => emptyItem()));
+            setCliente("");
+            setDni("");
+            setVendedor("");
+            setEnvio("");
+            setMetodoPago("");
+            setProvincia("Mendoza");
+            setCostoEnvio(0);
+            setDescuento(0);
+            setFecha(new Date().toISOString().slice(0, 10));
+          }}
+        >
           Limpiar
         </button>
-        <button className="primary" onClick={handleDownloadPDF}>
-          Descargar PDF
+        <button className="btn ghost" onClick={() => window.print()}>
+          Imprimir
         </button>
       </div>
 
-      {/* ====== ESTILOS ====== */}
+      {/* ====== estilos ====== */}
       <style jsx>{`
-        /* Layout general */
-        .page {
+        .wrap {
           display: flex;
           flex-direction: column;
           align-items: center;
-          padding: 16px;
-          background: #f5f5f7;
+          padding: 24px;
+          background: #f5f6f8;
+        }
+        .sheet {
+          width: 210mm;                 /* A4 real */
+          max-width: 100%;
+          background: #fff;
+          border-radius: 14px;
+          box-shadow: 0 6px 24px rgba(0,0,0,.06);
+          padding: 18px 18px 12px;
+        }
+
+        .header .brand {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          margin-bottom: 10px;
+        }
+        .logoBox {
+          width: 90px;
+          height: 40px;
+          border-radius: 8px;
+          display: grid;
+          place-items: center;
+          position: relative;
+        }
+        .logoFallback {
+          position: absolute;
+          inset: 0;
+          display: grid;
+          place-items: center;
+          font-weight: 800;
+          letter-spacing: 1px;
           color: #111;
         }
-
-        /* Hoja A4 virtual: 190mm ancho para dejar márgenes al imprimir */
-        .sheet {
-          width: 190mm; /* ~720px */
-          background: #fff;
-          border-radius: 10px;
-          box-shadow: 0 6px 18px rgba(0, 0, 0, 0.07);
-          padding: 10mm;
-        }
-
-        .topbar {
-          display: flex;
-          align-items: center;
-          gap: 10px;
-          margin-bottom: 8px;
-        }
-
-        .brand {
-          width: 70px;
-          height: 28px;
-          display: flex;
-          align-items: center;
-        }
-
         h1 {
           font-size: 18px;
           margin: 0;
@@ -398,160 +499,119 @@ export default function Remito8CHOQ() {
         }
 
         .card {
-          border: 1px solid #e6e7eb;
-          border-radius: 10px;
-          padding: 10px;
-          margin-top: 10px;
+          border: 1px solid #eee;
+          border-radius: 12px;
+          padding: 12px;
+          margin-bottom: 10px;
         }
-
-        .grid-2 {
+        .grid2 {
           display: grid;
           grid-template-columns: 1fr 1fr;
-          gap: 8px 12px;
+          gap: 10px 16px;
         }
-
-        .grid-2-span {
-          grid-column: span 1;
-        }
-
-        .field {
-          display: flex;
-          flex-direction: column;
-          gap: 4px;
-        }
-        .field label {
-          font-size: 11px;
-          color: #666;
-        }
-        .field input,
-        .field select {
-          height: 30px;
-          padding: 0 10px;
-          border: 1px solid #d9dbe0;
-          border-radius: 8px;
-          background: #fff;
+        label {
+          display: block;
           font-size: 12px;
+          color: #6b7280;
+          margin-bottom: 6px;
+          font-weight: 600;
+        }
+        input, select, textarea {
+          width: 100%;
+          height: 38px;
+          border: 1px solid #e5e7eb;
+          border-radius: 10px;
+          padding: 0 10px;
+          font-size: 14px;
+          background: #fff;
         }
 
-        /* Tabla compacta sin scroll horizontal */
+        .tableCard { padding: 8px; }
         .table {
           width: 100%;
           border-collapse: collapse;
-          table-layout: fixed; /* ¡clave para que no se desborde! */
-          font-size: 12px;
+          table-layout: fixed;          /* IMPORTANTE: sin scroll horizontal */
         }
-        .table th,
-        .table td {
-          border: 1px solid #eceef2;
-          padding: 6px;
+        .table th, .table td {
+          border-bottom: 1px solid #f0f0f0;
+          padding: 8px;
+          vertical-align: middle;
           text-align: left;
         }
         .table thead th {
-          background: #f7f8fa;
-          font-weight: 600;
-          text-align: left;
-        }
-        .i {
-          width: 100%;
-          height: 28px;
-          padding: 0 8px;
-          border: 1px solid #d9dbe0;
-          border-radius: 8px;
           font-size: 12px;
-          box-sizing: border-box;
-        }
-        .i.num {
-          text-align: right;
-        }
-        .i.size {
-          padding-right: 4px;
-        }
-        .right {
-          text-align: right;
-          font-variant-numeric: tabular-nums;
-        }
-
-        .totales {
-          display: grid;
-          grid-template-columns: repeat(5, 1fr);
-          gap: 8px;
-          margin-top: 10px;
-          font-size: 12px;
-        }
-        .totales .total {
-          grid-column: span 1;
+          color: #6b7280;
           font-weight: 700;
         }
+        .table input {
+          height: 34px;
+        }
+        .num { text-align: right; font-weight: 700; }
 
-        .actions {
-          width: 190mm;
+        .footerRow {
           display: flex;
           justify-content: flex-end;
-          gap: 10px;
-          margin-top: 12px;
+          margin-top: 4px;
         }
-        .primary,
-        .ghost {
-          height: 36px;
+        .totalsCard {
+          width: 240px;
+          border: 1px solid #eee;
+          border-radius: 12px;
+          padding: 10px 12px;
+          background: #fafafa;
+        }
+        .totalsCard .r {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          padding: 6px 0;
+          border-bottom: 1px dashed #e6e6e6;
+          font-size: 14px;
+        }
+        .totalsCard .r:last-child { border-bottom: none; }
+        .totalsCard .r.total span { font-weight: 800; }
+        .totalsCard .r.total b { font-size: 18px; }
+
+        .actions {
+          width: 210mm;
+          max-width: 100%;
+          display: flex;
+          gap: 8px;
+          margin-top: 10px;
+        }
+        .btn {
+          height: 40px;
           padding: 0 14px;
           border-radius: 10px;
-          font-weight: 600;
-          border: 1px solid transparent;
-        }
-        .primary {
-          background: #17a34a;
+          border: 1px solid #e5e7eb;
+          background: #111;
           color: #fff;
+          font-weight: 600;
         }
-        .ghost {
-          background: transparent;
-          border-color: #d9dbe0;
-          color: #333;
+        .btn.ghost {
+          background: #fff;
+          color: #111;
         }
 
-        /* ===== Print ===== */
+        /* ===== PRINT (A4) ===== */
         @media print {
-          @page {
-            size: A4 portrait;
-            margin: 10mm;
-          }
-          :root,
-          body {
-            -webkit-print-color-adjust: exact;
-            print-color-adjust: exact;
-          }
-          .no-print {
-            display: none !important;
-          }
-          .page {
-            padding: 0;
-            background: #fff;
-          }
+          @page { size: A4; margin: 10mm; } /* margen chico, entra 1 hoja */
+          .no-print { display: none !important; }
+          body { background: #fff !important; }
+          .wrap { padding: 0; }
           .sheet {
-            width: auto; /* el @page manda el ancho */
+            width: auto;
+            padding: 0;
             box-shadow: none;
-            border-radius: 0;
-            padding: 0; /* ya dejamos margen con @page */
+            border: none;
           }
-          .card {
-            border-color: #e6e7eb;
-            page-break-inside: avoid;
-            break-inside: avoid;
-          }
-          .table {
-            font-size: 11px;
-          }
-          .i {
-            height: 24px;
-            font-size: 11px;
-          }
-          .field input,
-          .field select {
-            height: 26px;
-            font-size: 11px;
-          }
-          .totales {
-            font-size: 11px;
-          }
+          .card { margin-bottom: 8px; }
+        }
+
+        @media (max-width: 780px) {
+          .grid2 { grid-template-columns: 1fr; }
+          .footerRow { justify-content: stretch; }
+          .totalsCard { width: 100%; }
         }
       `}</style>
     </div>
