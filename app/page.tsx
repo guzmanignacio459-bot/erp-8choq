@@ -34,7 +34,7 @@ export default function Remito8CHOQ() {
   const [costoEnvio, setCostoEnvio] = useState(0);
   const [descuento, setDescuento] = useState(0);
 
-  const vendedores = ["Nacho", "Santi", "Paula", "Malena", "Vendedor 2", "Vendedor 3"];
+  const vendedores = ["Nacho", "Santi", "Paula", "Malena"];
   const envios = [
     "Correo - Sucursal",
     "Correo - Domicilio",
@@ -45,7 +45,7 @@ export default function Remito8CHOQ() {
     "Retira",
     "Domicilio",
   ];
-  const metodosPago = ["MP 1 cuota", "MP 3 cuotas", "Transferencia 1", "Transferencia 2"];
+  const metodosPago = ["MP 1 cuota", "MP 3 cuotas", "Transferencia 1", "Transferencia 2", "Efectivo", "Debito", "QR"];
   const descuentos = [
     { label: "Sin descuento", value: 0 },
     { label: "Mayorista 5%", value: 5 },
@@ -101,7 +101,15 @@ export default function Remito8CHOQ() {
       }}
     >
       <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "15px" }}>
-        <Image src={logo8CHOQ} alt="8CHOQ" width={80} height={40} />
+        {/* nombre real del archivo en /public */}
+<Image
+  src="/logo-8choq.png"
+  alt="8CHOQ"
+  width={80}
+  height={40}
+  priority
+/>
+
         <h1 style={{ fontSize: "18px", fontWeight: "bold" }}>Sistema de Remitos 8CHOQ (Prototipo)</h1>
       </div>
 
