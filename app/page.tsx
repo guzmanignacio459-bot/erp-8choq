@@ -23,13 +23,12 @@ const emptyItem = (): Item => ({
    Componente principal
 ======================= */
 export default function Remito8CHOQ() {
-  // 8 filas por defecto (entra en una página A4)
+  // 8 filas por defecto
   const [items, setItems] = useState<Item[]>(Array.from({ length: 8 }, emptyItem));
 
   const [cliente, setCliente] = useState("");
   const [fecha, setFecha] = useState<string>(() => {
     const d = new Date();
-    // YYYY-MM-DD para input date
     return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
   });
   const [dni, setDni] = useState("");
@@ -40,7 +39,7 @@ export default function Remito8CHOQ() {
   const [costoEnvio, setCostoEnvio] = useState<number>(0);
   const [descuento, setDescuento] = useState<number>(0);
 
-  // Opciones solicitadas
+  // Opciones
   const vendedores = ["Nacho", "Santi", "Paula", "Malena"];
   const envios = [
     "Correo – Sucursal",
@@ -82,17 +81,10 @@ export default function Remito8CHOQ() {
       return next;
     });
   };
-  const onChangeTalle = (
-    idx: number,
-    talle: keyof Item["talles"],
-    value: number
-  ) => {
+  const onChangeTalle = (idx: number, talle: keyof Item["talles"], value: number) => {
     setItems((prev) => {
       const next = [...prev];
-      next[idx] = {
-        ...next[idx],
-        talles: { ...next[idx].talles, [talle]: Math.max(0, value || 0) },
-      };
+      next[idx] = { ...next[idx], talles: { ...next[idx].talles, [talle]: Math.max(0, value || 0) } };
       return next;
     });
   };
@@ -107,7 +99,6 @@ export default function Remito8CHOQ() {
       const jsPDF = (jspdfMod as any).jsPDF ?? (jspdfMod as any).default;
       const html2canvas = (html2canvasMod as any).default ?? html2canvasMod;
 
-      // Capturamos el contenedor al ancho A4 (~794px @96dpi)
       const canvas = await html2canvas(el, { scale: 2, backgroundColor: "#ffffff" });
       const imgData = canvas.toDataURL("image/png");
 
@@ -123,14 +114,12 @@ export default function Remito8CHOQ() {
     }
   };
 
-  /* ============ UI ============ */
   return (
     <div className="page">
       <div className="sheet a4" id="remito-container">
         {/* Header */}
         <div className="header">
           <div className="logoWrap">
-            {/* Logo desde /public */}
             <img src="/logo-8choq.png" alt="8CHOQ" width={90} height={40} />
           </div>
           <h1>Sistema de Remitos 8CHOQ (Prototipo)</h1>
@@ -191,10 +180,7 @@ export default function Remito8CHOQ() {
 
           <div className="field">
             <label>Descuento</label>
-            <select
-              value={descuento}
-              onChange={(e) => setDescuento(Number(e.target.value))}
-            >
+            <select value={descuento} onChange={(e) => setDescuento(Number(e.target.value))}>
               {descuentos.map((d) => (
                 <option key={d.value} value={d.value}>
                   {d.label}
@@ -210,28 +196,22 @@ export default function Remito8CHOQ() {
 
           <div className="field">
             <label>Costo de Envío ($)</label>
-            <input
-              type="number"
-              value={costoEnvio}
-              onChange={(e) => setCostoEnvio(Number(e.target.value))}
-              min={0}
-            />
+            <input type="number" value={costoEnvio} onChange={(e) => setCostoEnvio(Number(e.target.value))} min={0} />
           </div>
         </div>
 
         {/* Tabla */}
         <div className="card">
+          {/* Encabezado alineado con la grilla de filas */}
           <div className="tableHead">
             <div className="col code">Código</div>
             <div className="col articulo">Artículo</div>
             <div className="col pagar">A Pagar</div>
-            <div className="col sizes">S</div>
-            <div className="col sizes">M</div>
-            <div className="col sizes">L</div>
-            <div className="col sizes">XL</div>
-            <div className="col sizes">XXL</div>
-            <div className="col sizes">XXXL</div>
-            <div className="col total">Cant</div>
+            <div className="sizesHead">
+              {["S", "M", "L", "XL", "XXL", "XXXL", "Cant"].map((l) => (
+                <div key={l}>{l}</div>
+              ))}
+            </div>
           </div>
 
           {items.map((it, i) => {
@@ -250,7 +230,7 @@ export default function Remito8CHOQ() {
 
                 <div className="col articulo">
                   <input
-                    placeholder="Artículo"
+                    placeholder="Nombre de la prenda"
                     value={it.articulo}
                     onChange={(e) => onChangeItem(i, "articulo", e.target.value)}
                   />
@@ -286,7 +266,9 @@ export default function Remito8CHOQ() {
 
           {/* Acciones de filas (no se imprime) */}
           <div className="rowActions no-print">
-            <button className="btn ghost" onClick={addRow}>+ Agregar fila</button>
+            <button className="btn ghost" onClick={addRow}>
+              + Agregar fila
+            </button>
           </div>
         </div>
 
@@ -317,7 +299,9 @@ export default function Remito8CHOQ() {
 
       {/* Acciones (no se imprimen) */}
       <div className="footerActions no-print">
-        <button className="btn" onClick={handleDownloadPDF}>Descargar PDF</button>
+        <button className="btn" onClick={handleDownloadPDF}>
+          Descargar PDF
+        </button>
       </div>
 
       {/* ======== ESTILOS ======== */}
@@ -328,39 +312,29 @@ export default function Remito8CHOQ() {
           --muted: #6b7280;
           --text: #111827;
           --bg: #f7f7f7;
-          --brand: #111;
           --radius: 12px;
         }
         * { box-sizing: border-box; }
         body { background: var(--bg); }
 
         .page {
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          gap: 16px;
-          padding: 16px 10px 48px;
+          display: flex; flex-direction: column; align-items: center;
+          gap: 16px; padding: 16px 10px 48px;
         }
         .sheet.a4 {
-          width: 794px;          /* ancho real de A4 @96dpi */
-          background: #fff;
+          width: 794px; background: #fff; color: var(--text);
           box-shadow: 0 6px 20px rgba(0,0,0,.08);
           border-radius: var(--radius);
           padding: 18px 18px 12px;
-          color: var(--text);
         }
 
         .header {
-          display: grid;
-          grid-template-columns: 110px 1fr;
-          align-items: center;
-          gap: 12px;
-          margin-bottom: 10px;
+          display: grid; grid-template-columns: 110px 1fr;
+          align-items: center; gap: 12px; margin-bottom: 10px;
         }
         .logoWrap {
-          display: flex; align-items: center; justify-content: center;
-          height: 46px; border: 1px solid var(--stroke); border-radius: 10px;
-          background: #fff;
+          display:flex; align-items:center; justify-content:center;
+          height: 46px; border:1px solid var(--stroke); border-radius:10px; background:#fff;
         }
         h1 { font-size: 18px; margin: 0; }
 
@@ -373,121 +347,69 @@ export default function Remito8CHOQ() {
         }
 
         .grid2 {
-          display: grid;
-          grid-template-columns: 1fr 1fr;
-          gap: 10px 10px;
+          display: grid; grid-template-columns: 1fr 1fr; gap: 10px 10px;
         }
         .field { display: grid; gap: 6px; }
         .field label { font-size: 12px; color: var(--muted); }
         .field input, .field select {
-          height: 36px;
-          border: 1px solid var(--stroke);
-          border-radius: 10px;
-          padding: 0 10px;
-          outline: none;
+          height: 36px; border: 1px solid var(--stroke); border-radius: 10px; padding: 0 10px; outline: none;
         }
 
-        /* Tabla */
+        /* Tabla: 4 columnas -> code | articulo | pagar | sizesGrid */
         .tableHead, .row {
           display: grid;
           grid-template-columns: 160px 1fr 120px 1fr;
-          gap: 8px;
-          align-items: center;
+          gap: 8px; align-items: center;
         }
-        .tableHead {
-          font-size: 12px; color: var(--muted);
-          padding: 4px 2px 8px;
+        .tableHead { padding: 4px 2px 8px; }
+        .tableHead .col { font-size: 12px; color: var(--muted); }
+        .sizesHead {
+          display: grid; grid-template-columns: repeat(7, 56px);
+          column-gap: 12px; justify-content: center; text-align: center; font-size: 12px; color: var(--muted);
         }
+
         .row { padding: 6px 2px; }
         .row + .row { border-top: 1px dashed var(--stroke); }
 
-        .col.code input,
-        .col.articulo input,
-        .col.pagar input {
-          width: 100%;
-          height: 34px;
-          border: 1px solid var(--stroke);
-          border-radius: 10px;
-          padding: 0 10px;
+        .col.code input, .col.articulo input, .col.pagar input {
+          width: 100%; height: 34px; border: 1px solid var(--stroke);
+          border-radius: 10px; padding: 0 10px;
         }
-
-        /* Cabeceras compactas */
-        .col.code { width: 160px; }
-        .col.articulo { }
-        .col.pagar { width: 120px; }
-
-        /* Header de talles */
-        .tableHead .col.sizes {
-          width: 56px;
-          text-align: center;
-        }
-        .tableHead .col.total { width: 56px; text-align: center; }
 
         /* --- MÁS AIRE ENTRE TALLES --- */
         .sizesGrid {
-          display: grid;
-          grid-template-columns: repeat(7, 56px); /* S M L XL XXL XXXL Cant */
-          column-gap: 12px;
-          row-gap: 8px;
-          justify-content: center;
-          align-items: center;
+          display: grid; grid-template-columns: repeat(7, 56px); /* S M L XL XXL XXXL Cant */
+          column-gap: 12px; row-gap: 8px; justify-content: center; align-items: center;
         }
-        .qtyCell { display: flex; align-items: center; justify-content: center; }
+        .qtyCell { display:flex; align-items:center; justify-content:center; }
         .qtyCell input[type="number"] {
-          width: 56px;
-          height: 34px;
-          text-align: center;
-          font-size: 14px;
-          border: 1px solid var(--stroke);
-          border-radius: 10px;
-          padding: 2px 6px;
+          width: 56px; height: 34px; text-align: center; font-size: 14px;
+          border: 1px solid var(--stroke); border-radius: 10px; padding: 2px 6px;
         }
         .qtyCell.totalQty span { font-weight: 600; }
 
         .rowActions { padding-top: 8px; }
-        .btn {
-          height: 36px;
-          padding: 0 14px;
-          border-radius: 10px;
-          border: 1px solid var(--stroke);
-          background: #fff;
-          cursor: pointer;
-        }
+        .btn { height: 36px; padding: 0 14px; border-radius: 10px; border: 1px solid var(--stroke); background: #fff; cursor: pointer; }
         .btn.ghost { background: #fff; }
 
-        /* Totales */
+        /* Totales */}
         .totalsWrap {
-          width: 280px;
-          margin-left: auto;
-          background: #fff;
-          border: 1px solid var(--stroke);
-          border-radius: var(--radius);
-          padding: 10px 12px;
-          display: grid;
-          gap: 6px;
+          width: 280px; margin-left: auto; background: #fff; border: 1px solid var(--stroke);
+          border-radius: var(--radius); padding: 10px 12px; display: grid; gap: 6px;
         }
-        .totRow {
-          display: grid;
-          grid-template-columns: 1fr auto;
-          align-items: center;
-          font-size: 14px;
-        }
+        .totRow { display: grid; grid-template-columns: 1fr auto; align-items: center; font-size: 14px; }
         .totRow span { color: var(--muted); }
-        .totRow.grand span { color: var(--text); font-weight: 600; }
+        .totRow.grand span { color: #111; font-weight: 600; }
         .totRow b { font-weight: 700; }
 
         .footerActions { width: 794px; display: flex; justify-content: flex-end; gap: 8px; }
 
-        /* ---- PRINT (A4) ---- */
+        /* ---- PRINT ---- */
         @media print {
           .no-print { display: none !important; }
           body { background: #fff; }
           .page { padding: 0; }
-          .sheet.a4 {
-            box-shadow: none;
-            width: 210mm;       /* A4 mm para motor de impresión */
-            padding: 10mm;      /* Margen seguro en impresora */
-          }
+          .sheet.a4 { box-shadow: none; width: 210mm; padding: 10mm; }
           .totalsWrap { break-inside: avoid; }
         }
       `}</style>
