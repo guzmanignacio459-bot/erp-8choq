@@ -5,10 +5,9 @@ import { useMemo, useState } from "react";
 type Item = {
   codigo: string;
   articulo: string;
-  aPagar: string; // antes era number
-  talles: { S: string; M: string; L: string; XL: string; XXL: string; XXXL: string }; // antes eran number
+  aPagar: number;
+  talles: { S: number; M: number; L: number; XL: number; XXL: number; XXXL: number };
 };
-
 
 const DEFAULT_ROWS = 10;
 
