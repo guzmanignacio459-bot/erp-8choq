@@ -2,11 +2,20 @@
 
 import { useMemo, useState } from "react";
 
+type Talles = {
+  S: string;
+  M: string;
+  L: string;
+  XL: string;
+  XXL: string;
+  XXXL: string;
+};
+
 type Item = {
   codigo: string;
   articulo: string;
-  aPagar: number;
-  talles: { S: number; M: number; L: number; XL: number; XXL: number; XXXL: number };
+  aPagar: string; // precio unitario
+  talles: Talles;
 };
 
 const DEFAULT_ROWS = 10;
@@ -14,148 +23,276 @@ const DEFAULT_ROWS = 10;
 const emptyItem = (): Item => ({
   codigo: "",
   articulo: "",
-  aPagar: 0,
-  talles: { S: 0, M: 0, L: 0, XL: 0, XXL: 0, XXXL: 0 },
+  aPagar: "",
+  talles: { S: "0", M: "0", L: "0", XL: "0", XXL: "0", XXXL: "0" },
 });
 
-export default function RemitoPlanilla8CHOQ() {
-  const [items, setItems] = useState<Item[]>(Array.from({ length: DEFAULT_ROWS }, emptyItem));
-
+export default function Remito8CHOQ() {
+  // ------- Encabezado -------
   const [cliente, setCliente] = useState("");
-  const [fecha, setFecha] = useState<string>(() => {
-    const d = new Date();
-    return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
-  });
+  const [fecha, setFecha] = useState<string>(
+    new Date().toISOString().slice(0, 10)
+  );
   const [dni, setDni] = useState("");
   const [vendedor, setVendedor] = useState("");
   const [envio, setEnvio] = useState("");
   const [metodoPago, setMetodoPago] = useState("");
   const [provincia, setProvincia] = useState("Mendoza");
-  const [costoEnvio, setCostoEnvio] = useState<number>(0);
+  const [costoEnvio, setCostoEnvio] = useState<string>("0");
+  const [descuento, setDescuento] = useState<number>(0);
 
+  // ------- Items -------
+  const [items, setItems] = useState<Item[]>(
+    Array.from({ length: DEFAULT_ROWS }, () => emptyItem())
+  );
+
+  // ------- Catálogos -------
   const vendedores = ["Nacho", "Santi", "Paula", "Malena"];
   const envios = [
-    "Correo – Sucursal",
-    "Correo – Domicilio",
-    "Andreani – Sucursal",
-    "Andreani – Domicilio",
+    "Correo - Sucursal",
+    "Correo - Domicilio",
+    "Andreani - Sucursal",
+    "Andreani - Domicilio",
     "OCA",
     "Send Box",
     "Retira",
     "Domicilio",
   ];
-  const metodosPago = ["MP 1 cuota", "MP 3 cuotas", "Transferencia 1", "Transferencia 2", "Efectivo", "Débito", "QR"];
+  const metodosPago = [
+    "MP 1 cuota",
+    "MP 3 cuotas",
+    "Transferencia 1",
+    "Transferencia 2",
+    "Efectivo",
+    "Débito",
+    "QR",
+  ];
+  const descuentos = [
+    { label: "Sin descuento", value: 0 },
+    { label: "Mayorista 5%", value: 5 },
+    { label: "Promo 10%", value: 10 },
+    { label: "Mayorista 15%", value: 15 },
+    { label: "Promo 20%", value: 20 },
+  ];
 
-  const totals = useMemo(() => {
-    const totalPrendas = items.reduce(
-      (acc, it) => acc + it.talles.S + it.talles.M + it.talles.L + it.talles.XL + it.talles.XXL + it.talles.XXXL,
-      0
+  // ------- Update helpers -------
+  const updateItem = (idx: number, key: keyof Item, value: string) => {
+    setItems((prev) => prev.map((r, i) => (i === idx ? { ...r, [key]: value } : r)));
+  };
+
+  const updateTalle = (idx: number, talle: keyof Item["talles"], value: string) => {
+    setItems((prev) =>
+      prev.map((r, i) =>
+        i === idx ? { ...r, talles: { ...r.talles, [talle]: value } } : r
+      )
     );
-    const subtotal = items.reduce((acc, it) => {
-      const cant = it.talles.S + it.talles.M + it.talles.L + it.talles.XL + it.talles.XXL + it.talles.XXXL;
-      return acc + (it.aPagar || 0) * cant;
-    }, 0);
-    const total = Math.max(0, subtotal + (costoEnvio || 0));
-    return { totalPrendas, subtotal, total };
-  }, [items, costoEnvio]);
+  };
 
   const addRow = () => setItems((prev) => [...prev, emptyItem()]);
+  const clearTable = () =>
+    setItems(Array.from({ length: DEFAULT_ROWS }, () => emptyItem()));
 
-  const onChangeItem = <K extends keyof Item>(idx: number, key: K, value: Item[K]) => {
-    setItems((prev) => {
-      const next = [...prev];
-      next[idx] = { ...next[idx], [key]: value };
-      return next;
-    });
-  };
-  const onChangeTalle = (idx: number, talle: keyof Item["talles"], value: number) => {
-    setItems((prev) => {
-      const next = [...prev];
-      const v = Math.max(0, value || 0);
-      next[idx] = { ...next[idx], talles: { ...next[idx].talles, [talle]: v } };
-      return next;
-    });
-  };
+  // ------- Totales -------
+  const {
+    totalPrendas,
+    subtotal,
+    descuentoMonto,
+    envioMonto,
+    total,
+    lineTotals,
+    lineQty,
+  } = useMemo(() => {
+    let prendas = 0;
+    let sub = 0;
+    const qty: number[] = [];
+    const totales: number[] = [];
 
+    items.forEach((it, i) => {
+      const q =
+        (parseInt(it.talles.S || "0") || 0) +
+        (parseInt(it.talles.M || "0") || 0) +
+        (parseInt(it.talles.L || "0") || 0) +
+        (parseInt(it.talles.XL || "0") || 0) +
+        (parseInt(it.talles.XXL || "0") || 0) +
+        (parseInt(it.talles.XXXL || "0") || 0);
+
+      const precio = parseFloat(it.aPagar || "0") || 0;
+      const t = precio * q;
+
+      prendas += q;
+      sub += t;
+
+      qty[i] = q;
+      totales[i] = t;
+    });
+
+    const descMonto = (sub * descuento) / 100;
+    const envioNum = parseFloat(costoEnvio || "0") || 0;
+    const tot = sub - descMonto + envioNum;
+
+    return {
+      totalPrendas: prendas,
+      subtotal: sub,
+      descuentoMonto: descMonto,
+      envioMonto: envioNum,
+      total: tot,
+      lineTotals: totales,
+      lineQty: qty,
+    };
+  }, [items, descuento, costoEnvio]);
+
+  // ------- PDF -------
   const handleDownloadPDF = async () => {
     const el = document.getElementById("sheet");
     if (!el) return;
+
     try {
-      const [jspdfMod, html2canvasMod] = await Promise.all([import("jspdf"), import("html2canvas")]);
-      const jsPDF = (jspdfMod as any).jsPDF ?? (jspdfMod as any).default;
-      const html2canvas = (html2canvasMod as any).default ?? html2canvasMod;
-      const canvas = await html2canvas(el, { scale: 2, backgroundColor: "#ffffff" });
+      const [jsPDFmod, html2canvasMod] = await Promise.all([
+        import("jspdf"),
+        import("html2canvas"),
+      ]);
+      const jsPDF = (jsPDFmod as any).jsPDF ?? (jsPDFmod as any).default;
+      const html2canvas =
+        (html2canvasMod as any).default ?? (html2canvasMod as any);
+
+      const canvas = await html2canvas(el, { scale: 2 });
       const imgData = canvas.toDataURL("image/png");
       const pdf = new jsPDF("p", "mm", "a4");
+
       const pageWidth = 210;
-      const imgProps = (pdf as any).getImageProperties(imgData);
+      const imgProps = pdf.getImageProperties(imgData);
       const pdfHeight = (imgProps.height * pageWidth) / imgProps.width;
+
       pdf.addImage(imgData, "PNG", 0, 0, pageWidth, pdfHeight);
       pdf.save(`Remito-${cliente || "8CHOQ"}.pdf`);
-    } catch {
-      alert("Para descargar el PDF, instalá 'jspdf' y 'html2canvas' en el proyecto.");
+    } catch (err) {
+      console.error("Error generando PDF:", err);
     }
   };
 
   return (
-    <div className="page">
-      <div className="a4 sheet" id="sheet">
-        {/* LOGO */}
-        <div className="logoRow thick">
-          <img src="/logo-8choq.png" alt="8CHOQ" className="logo" />
+    <main className="flex justify-center">
+      {/* hoja con borde grueso tipo planilla (ancho fijo para que entre todo) */}
+      <div
+        id="sheet"
+        className="mx-auto my-6 w-[1120px] max-w-full rounded-[6px] border-4 border-gray-800 bg-white p-5 print:w-[1120px]"
+      >
+        {/* Cabecera estilo planilla con bordes gruesos en cada bloque */}
+        <div className="grid grid-cols-12 gap-3">
+          <div className="col-span-5 grid grid-cols-12 gap-2">
+            <div className="col-span-12">
+              <div className="border-2 border-gray-800 px-3 py-1 text-sm font-bold">
+                NOMBRE
+              </div>
+              <input
+                className="h-10 w-full border-x-2 border-b-2 border-gray-800 px-3 outline-none"
+                placeholder="Cliente"
+                value={cliente}
+                onChange={(e) => setCliente(e.target.value)}
+              />
+            </div>
+
+            <div className="col-span-12 grid grid-cols-12 gap-2">
+              <div className="col-span-6">
+                <div className="border-2 border-gray-800 px-3 py-1 text-sm font-bold">
+                  FECHA
+                </div>
+                <input
+                  type="date"
+                  className="h-10 w-full border-x-2 border-b-2 border-gray-800 px-3 outline-none"
+                  value={fecha}
+                  onChange={(e) => setFecha(e.target.value)}
+                />
+              </div>
+              <div className="col-span-6">
+                <div className="border-2 border-gray-800 px-3 py-1 text-sm font-bold">
+                  DNI
+                </div>
+                <input
+                  className="h-10 w-full border-x-2 border-b-2 border-gray-800 px-3 outline-none"
+                  placeholder="DNI"
+                  value={dni}
+                  onChange={(e) => setDni(e.target.value)}
+                />
+              </div>
+            </div>
+          </div>
+
+          <div className="col-span-7 grid grid-cols-12 gap-2">
+            <div className="col-span-12">
+              <div className="border-2 border-gray-800 px-3 py-1 text-sm font-bold">
+                ENVÍO
+              </div>
+              <select
+                className="h-10 w-full border-x-2 border-b-2 border-gray-800 px-3 outline-none"
+                value={envio}
+                onChange={(e) => setEnvio(e.target.value)}
+              >
+                <option value="">Seleccionar...</option>
+                {envios.map((e) => (
+                  <option key={e} value={e}>
+                    {e}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="col-span-12">
+              <div className="border-2 border-gray-800 px-3 py-1 text-sm font-bold">
+                MÉTODO DE PAGO
+              </div>
+              <select
+                className="h-10 w-full border-x-2 border-b-2 border-gray-800 px-3 outline-none"
+                value={metodoPago}
+                onChange={(e) => setMetodoPago(e.target.value)}
+              >
+                <option value="">Seleccionar...</option>
+                {metodosPago.map((m) => (
+                  <option key={m} value={m}>
+                    {m}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="col-span-9">
+              <div className="border-2 border-gray-800 px-3 py-1 text-sm font-bold">
+                PROVINCIA / LOCALIDAD
+              </div>
+              <input
+                className="h-10 w-full border-x-2 border-b-2 border-gray-800 px-3 outline-none"
+                value={provincia}
+                onChange={(e) => setProvincia(e.target.value)}
+              />
+            </div>
+
+            <div className="col-span-3">
+              <div className="border-2 border-gray-800 px-3 py-1 text-sm font-bold">
+                COSTO DE ENVÍO ($)
+              </div>
+              <input
+                className="h-10 w-full border-x-2 border-b-2 border-gray-800 px-3 text-right outline-none"
+                value={costoEnvio}
+                onChange={(e) => setCostoEnvio(e.target.value)}
+                inputMode="decimal"
+                placeholder="0"
+              />
+            </div>
+          </div>
         </div>
 
-        {/* BLOQUE DATOS (dos columnas) */}
-        <div className="metaGrid">
-          {/* fila 1 */}
-          <div className="cell label thick">NOMBRE</div>
-          <div className="cell thick">
-            <input value={cliente} onChange={(e) => setCliente(e.target.value)} />
-          </div>
-          <div className="cell label thick">ENVIO</div>
-          <div className="cell thick">
-            <select value={envio} onChange={(e) => setEnvio(e.target.value)}>
-              <option value=""></option>
-              {envios.map((v) => (
-                <option key={v} value={v}>
-                  {v}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {/* fila 2 */}
-          <div className="cell label thick">FECHA</div>
-          <div className="cell thick">
-            <input type="date" value={fecha} onChange={(e) => setFecha(e.target.value)} />
-          </div>
-          <div className="cell label thick">METODO DE PAGO</div>
-          <div className="cell thick">
-            <select value={metodoPago} onChange={(e) => setMetodoPago(e.target.value)}>
-              <option value=""></option>
-              {metodosPago.map((v) => (
-                <option key={v} value={v}>
-                  {v}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {/* fila 3 */}
-          <div className="cell label thick">DNI</div>
-          <div className="cell thick">
-            <input value={dni} onChange={(e) => setDni(e.target.value)} />
-          </div>
-          <div className="cell label thick">PROVINCIA/ LOCALIDAD</div>
-          <div className="cell thick">
-            <input value={provincia} onChange={(e) => setProvincia(e.target.value)} />
-          </div>
-
-          {/* fila 4 (vendedor toda la fila derecha) */}
-          <div className="cell label thick">VENDEDOR</div>
-          <div className="cell span3 thick">
-            <select value={vendedor} onChange={(e) => setVendedor(e.target.value)}>
-              <option value=""></option>
+        {/* Vendedor + Descuento */}
+        <div className="mt-3 grid grid-cols-12 gap-3">
+          <div className="col-span-6">
+            <div className="border-2 border-gray-800 px-3 py-1 text-sm font-bold">
+              VENDEDOR
+            </div>
+            <select
+              className="h-10 w-full border-x-2 border-b-2 border-gray-800 px-3 outline-none"
+              value={vendedor}
+              onChange={(e) => setVendedor(e.target.value)}
+            >
+              <option value="">Seleccionar...</option>
               {vendedores.map((v) => (
                 <option key={v} value={v}>
                   {v}
@@ -163,194 +300,176 @@ export default function RemitoPlanilla8CHOQ() {
               ))}
             </select>
           </div>
+
+          <div className="col-span-6">
+            <div className="border-2 border-gray-800 px-3 py-1 text-sm font-bold">
+              DESCUENTO
+            </div>
+            <select
+              className="h-10 w-full border-x-2 border-b-2 border-gray-800 px-3 outline-none"
+              value={descuento}
+              onChange={(e) => setDescuento(parseInt(e.target.value))}
+            >
+              {descuentos.map((d) => (
+                <option key={d.value} value={d.value}>
+                  {d.label}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
 
-        {/* ENCABEZADO DE TABLA */}
-        <div className="tableHead thick">
-          <div className="h cell center">CODIGO</div>
-          <div className="h cell center">ARTICULO</div>
-          <div className="h cell center">A PAGAR</div>
-          <div className="h cell center">S</div>
-          <div className="h cell center">M</div>
-          <div className="h cell center">L</div>
-          <div className="h cell center">XL</div>
-          <div className="h cell center">XXL</div>
-          <div className="h cell center">XXXL</div>
-          <div className="h cell center">CANTIDAD</div>
-          <div className="h cell center">TOTAL</div>
-        </div>
+        {/* Tabla de items (bordes tipo planilla) */}
+        <div className="mt-4 rounded-[6px] border-2 border-gray-800 p-2">
+          {/* Encabezado de columnas con borde inferior grueso */}
+          <div className="grid grid-cols-[120px_280px_110px_repeat(6,65px)_100px_120px] items-center border-b-2 border-gray-800 pb-2 text-sm font-bold">
+            <div className="px-2">CÓDIGO</div>
+            <div className="px-2">ARTÍCULO</div>
+            <div className="px-2">A PAGAR</div>
+            <div className="px-2 text-center">S</div>
+            <div className="px-2 text-center">M</div>
+            <div className="px-2 text-center">L</div>
+            <div className="px-2 text-center">XL</div>
+            <div className="px-2 text-center">XXL</div>
+            <div className="px-2 text-center">XXXL</div>
+            <div className="px-2 text-center">CANTIDAD</div>
+            <div className="px-2 text-right">TOTAL</div>
+          </div>
 
-        {/* FILAS */}
-        <div className="rows">
-          {items.map((it, i) => {
-            const cant = it.talles.S + it.talles.M + it.talles.L + it.talles.XL + it.talles.XXL + it.talles.XXXL;
-            const totalItem = (it.aPagar || 0) * cant;
+          {/* Filas */}
+          <div className="divide-y divide-gray-300">
+            {items.map((it, i) => {
+              const cantidad = lineQty[i] ?? 0;
+              const totalLinea = lineTotals[i] ?? 0;
 
-            return (
-              <div className="row" key={i}>
-                <div className="cell">
-                  <input value={it.codigo} onChange={(e) => onChangeItem(i, "codigo", e.target.value)} />
-                </div>
-                <div className="cell">
-                  <input value={it.articulo} onChange={(e) => onChangeItem(i, "articulo", e.target.value)} />
-                </div>
-                <div className="cell">
-                  <input
-                    type="number"
-                    min={0}
-                    value={Number.isFinite(it.aPagar) ? it.aPagar : 0}
-                    onChange={(e) => onChangeItem(i, "aPagar", Number(e.target.value))}
-                  />
-                </div>
-
-                {(["S", "M", "L", "XL", "XXL", "XXXL"] as const).map((t) => (
-                  <div className="cell center" key={t}>
+              return (
+                <div
+                  key={i}
+                  className="grid grid-cols-[120px_280px_110px_repeat(6,65px)_100px_120px] items-center py-1"
+                >
+                  {/* Código */}
+                  <div className="px-2">
                     <input
-                      className="qty"
-                      type="number"
-                      min={0}
-                      value={(it.talles as any)[t]}
-                      onChange={(e) => onChangeTalle(i, t, Number(e.target.value))}
+                      className="h-9 w-[116px] rounded-sm border border-gray-400 px-2 outline-none"
+                      placeholder="Código"
+                      value={it.codigo}
+                      onChange={(e) => updateItem(i, "codigo", e.target.value)}
                     />
                   </div>
-                ))}
 
-                <div className="cell right mono">{cant}</div>
-                <div className="cell right mono">${totalItem.toFixed(2)}</div>
-              </div>
-            );
-          })}
-        </div>
+                  {/* Artículo */}
+                  <div className="px-2">
+                    <input
+                      className="h-9 w-[272px] rounded-sm border border-gray-400 px-2 outline-none"
+                      placeholder="Artículo"
+                      value={it.articulo}
+                      onChange={(e) => updateItem(i, "articulo", e.target.value)}
+                    />
+                  </div>
 
-        {/* PIE – TOTALES */}
-        <div className="footGrid">
-          <div className="cell label thick span9 right">TOTAL PRENDAS</div>
-          <div className="cell thick right mono">{totals.totalPrendas}</div>
-          <div className="cell thick"></div>
+                  {/* A pagar */}
+                  <div className="px-2">
+                    <input
+                      className="h-9 w-[106px] rounded-sm border border-gray-400 px-2 text-right outline-none"
+                      placeholder="0"
+                      value={it.aPagar}
+                      onChange={(e) => updateItem(i, "aPagar", e.target.value)}
+                      inputMode="decimal"
+                    />
+                  </div>
 
-          <div className="cell label thick span9 right">ENVIO</div>
-          <div className="cell thick right">
-            <input
-              className="right"
-              type="number"
-              min={0}
-              value={costoEnvio}
-              onChange={(e) => setCostoEnvio(Number(e.target.value))}
-            />
+                  {/* Talles */}
+                  {(["S", "M", "L", "XL", "XXL", "XXXL"] as const).map((t) => (
+                    <div key={t} className="px-2 text-center">
+                      <input
+                        className="h-9 w-[56px] rounded-sm border border-gray-400 text-center outline-none"
+                        placeholder="0"
+                        value={it.talles[t]}
+                        onChange={(e) => updateTalle(i, t, e.target.value)}
+                        inputMode="numeric"
+                      />
+                    </div>
+                  ))}
+
+                  {/* Cantidad */}
+                  <div className="px-2 text-center">{cantidad}</div>
+
+                  {/* Total */}
+                  <div className="px-2 text-right">${totalLinea.toFixed(2)}</div>
+                </div>
+              );
+            })}
           </div>
-          <div className="cell thick"></div>
 
-          <div className="cell label thick span9 right">TOTAL</div>
-          <div className="cell thick right mono">${totals.total.toFixed(2)}</div>
-          <div className="cell thick"></div>
+          {/* Línea gruesa antes del total prendas */}
+          <div className="mt-2 border-t-2 border-gray-800 pt-2 text-center text-sm font-bold">
+            TOTAL PRENDAS
+          </div>
+          <div className="text-center text-base">{totalPrendas}</div>
+        </div>
+
+        {/* Totales a la derecha con borde grueso exterior */}
+        <div className="mt-4 grid grid-cols-12 gap-3">
+          <div className="col-span-6 flex items-center gap-3">
+            <button
+              onClick={addRow}
+              className="rounded-md border-2 border-gray-800 px-4 py-2 text-sm hover:bg-gray-50"
+            >
+              + Agregar fila
+            </button>
+            <button
+              onClick={clearTable}
+              className="rounded-md border-2 border-gray-800 px-4 py-2 text-sm hover:bg-gray-50"
+            >
+              Limpiar
+            </button>
+          </div>
+
+          <div className="col-span-6">
+            <div className="ml-auto w-[360px] rounded-[6px] border-4 border-gray-800">
+              <div className="grid grid-cols-2 gap-y-0 p-3 text-[15px]">
+                <div className="border-b border-gray-300 py-2 font-semibold text-gray-700">
+                  SUBTOTAL
+                </div>
+                <div className="border-b border-gray-300 py-2 text-right font-semibold">
+                  ${subtotal.toFixed(2)}
+                </div>
+
+                <div className="border-b border-gray-300 py-2 font-semibold text-gray-700">
+                  DESCUENTO {descuento ? `(${descuento}%)` : ""}
+                </div>
+                <div className="border-b border-gray-300 py-2 text-right font-semibold">
+                  -${descuentoMonto.toFixed(2)}
+                </div>
+
+                <div className="border-b border-gray-300 py-2 font-semibold text-gray-700">
+                  ENVÍO
+                </div>
+                <div className="border-b border-gray-300 py-2 text-right font-semibold">
+                  ${envioMonto.toFixed(2)}
+                </div>
+
+                <div className="col-span-2 mt-2 border-t-2 border-gray-800 pt-2 text-xl font-extrabold">
+                  <div className="flex items-center justify-between">
+                    <span>TOTAL</span>
+                    <span>${total.toFixed(2)}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Acciones */}
+        <div className="mt-4 flex justify-end gap-3">
+          <button
+            onClick={handleDownloadPDF}
+            className="rounded-md border-2 border-gray-800 px-4 py-2 hover:bg-gray-50"
+          >
+            Descargar PDF
+          </button>
         </div>
       </div>
-
-      {/* Acciones (no print) */}
-      <div className="actions no-print">
-        <button onClick={addRow}>+ Agregar fila</button>
-        <button onClick={handleDownloadPDF}>Descargar PDF</button>
-      </div>
-
-      <style jsx>{`
-        :root {
-          --line: #000;            /* líneas negras como planilla */
-          --light: #e5e7eb;
-          --bg: #fff;
-          --text: #000;
-          --label: #000;
-          --font: 13.5px;          /* tamaño base parecido a tu hoja */
-          --rowH: 32px;            /* alto de fila tipo Excel */
-          --thick: 2px;            /* grosor de líneas gruesas */
-          --thin: 1px;
-        }
-        * { box-sizing: border-box; }
-        body { background: #f6f6f6; }
-
-        .page { display:flex; flex-direction:column; align-items:center; gap:12px; padding:16px; }
-        .a4.sheet {
-          width: 794px; background: var(--bg); color: var(--text);
-          box-shadow: 0 6px 24px rgba(0,0,0,.08);
-          padding: 8px;   /* bordes finos */
-        }
-
-        .thick { border: var(--thick) solid var(--line); }
-        .logoRow {
-          height: 90px; display:flex; align-items:center; justify-content:center; margin-bottom: 6px;
-        }
-        .logo { height: 84px; object-fit: contain; }
-
-        /* Meta grid (dos columnas) — 4 filas */
-        .metaGrid {
-          display: grid;
-          grid-template-columns: 160px 1fr 180px 1fr;  /* medidas similares a tu hoja */
-          gap: 0; font-size: var(--font); margin-bottom: 6px;
-        }
-        .metaGrid .cell { border: var(--thin) solid var(--line); height: var(--rowH); display:flex; align-items:center; padding: 0 8px; }
-        .metaGrid .label { font-weight: 800; }
-        .metaGrid .span3 { grid-column: span 3; }
-        .metaGrid input, .metaGrid select {
-          width: 100%; height: calc(var(--rowH) - 6px); border: none; outline: none; font-size: var(--font);
-          background: transparent;
-        }
-
-        /* Head de tabla */
-        .tableHead {
-          display: grid;
-          grid-template-columns: 110px 1fr 100px repeat(6, 56px) 110px 120px; /* CÓDIGO/ARTÍCULO/A PAGAR + 6 talles + CANT + TOTAL */
-          gap: 0; height: var(--rowH); margin-bottom: 0;
-        }
-        .tableHead .cell {
-          border: var(--thin) solid var(--line);
-          display:flex; align-items:center; justify-content:center;
-          font-weight: 800; font-size: var(--font);
-        }
-        .center { text-align:center; }
-        .right { text-align:right; justify-content: flex-end; }
-        .mono { font-variant-numeric: tabular-nums; }
-
-        /* Filas */
-        .rows .row {
-          display: grid;
-          grid-template-columns: 110px 1fr 100px repeat(6, 56px) 110px 120px;
-          gap: 0;
-          min-height: var(--rowH);
-        }
-        .rows .cell {
-          border: var(--thin) solid var(--line);
-          display:flex; align-items:center; padding: 0 8px;
-        }
-        .rows input {
-          width: 100%; height: calc(var(--rowH) - 6px); border: none; outline: none; font-size: var(--font);
-          background: transparent; text-align: left;
-        }
-        .rows input.qty { text-align: center; }
-
-        /* Totales pie */
-        .footGrid {
-          display: grid;
-          grid-template-columns: 110px 1fr 100px repeat(6, 56px) 110px 120px;
-          margin-top: 4px;
-        }
-        .footGrid .cell {
-          border: var(--thin) solid var(--line); height: var(--rowH);
-          display:flex; align-items:center; padding: 0 8px;
-        }
-        .footGrid .span9 { grid-column: 1 / span 9; } /* texto al pie ocupa hasta antes de Cant/Total */
-
-        /* Acciones */
-        .actions { width: 794px; display:flex; gap: 10px; justify-content: flex-end; }
-        .actions button {
-          height: 34px; padding: 0 14px; border: 1px solid #d1d5db; background: #fff; border-radius: 8px; cursor: pointer;
-        }
-
-        @media print {
-          .no-print { display: none !important; }
-          body { background: #fff; }
-          .page { padding: 0; }
-          .a4.sheet { box-shadow: none; width: 210mm; padding: 6mm; }
-        }
-      `}</style>
-    </div>
+    </main>
   );
 }
