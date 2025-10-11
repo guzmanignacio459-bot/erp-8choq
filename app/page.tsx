@@ -2,15 +2,14 @@
 
 import { useMemo, useState } from "react";
 
-/* =======================
-   Tipos y helpers
-======================= */
 type Item = {
   codigo: string;
   articulo: string;
   aPagar: number;
   talles: { S: number; M: number; L: number; XL: number; XXL: number; XXXL: number };
 };
+
+const DEFAULT_ROWS = 10;
 
 const emptyItem = (): Item => ({
   codigo: "",
@@ -19,12 +18,8 @@ const emptyItem = (): Item => ({
   talles: { S: 0, M: 0, L: 0, XL: 0, XXL: 0, XXXL: 0 },
 });
 
-/* =======================
-   Componente principal
-======================= */
-export default function Remito8CHOQ() {
-  // 8 filas por defecto
-  const [items, setItems] = useState<Item[]>(Array.from({ length: 8 }, emptyItem));
+export default function RemitoPlanilla8CHOQ() {
+  const [items, setItems] = useState<Item[]>(Array.from({ length: DEFAULT_ROWS }, emptyItem));
 
   const [cliente, setCliente] = useState("");
   const [fecha, setFecha] = useState<string>(() => {
@@ -37,9 +32,7 @@ export default function Remito8CHOQ() {
   const [metodoPago, setMetodoPago] = useState("");
   const [provincia, setProvincia] = useState("Mendoza");
   const [costoEnvio, setCostoEnvio] = useState<number>(0);
-  const [descuento, setDescuento] = useState<number>(0);
 
-  // Opciones
   const vendedores = ["Nacho", "Santi", "Paula", "Malena"];
   const envios = [
     "Correo – Sucursal",
@@ -51,29 +44,23 @@ export default function Remito8CHOQ() {
     "Retira",
     "Domicilio",
   ];
-  const metodosPago = ["MP 1 cuota", "MP 3 cuotas", "Transferencia 1", "Transferencia 2", "Efectivo", "Debito", "QR"];
-  const descuentos = [
-    { label: "Sin descuento", value: 0 },
-    { label: "Mayorista 5%", value: 5 },
-    { label: "Minorista 10%", value: 10 },
-  ];
+  const metodosPago = ["MP 1 cuota", "MP 3 cuotas", "Transferencia 1", "Transferencia 2", "Efectivo", "Débito", "QR"];
 
-  /* ============ Totales ============ */
   const totals = useMemo(() => {
     const totalPrendas = items.reduce(
       (acc, it) => acc + it.talles.S + it.talles.M + it.talles.L + it.talles.XL + it.talles.XXL + it.talles.XXXL,
       0
     );
+    const subtotal = items.reduce((acc, it) => {
+      const cant = it.talles.S + it.talles.M + it.talles.L + it.talles.XL + it.talles.XXL + it.talles.XXXL;
+      return acc + (it.aPagar || 0) * cant;
+    }, 0);
+    const total = Math.max(0, subtotal + (costoEnvio || 0));
+    return { totalPrendas, subtotal, total };
+  }, [items, costoEnvio]);
 
-    const subtotal = items.reduce((acc, it) => acc + (it.aPagar || 0), 0);
-    const descuentoMonto = Math.round((subtotal * descuento) / 100);
-    const total = Math.max(0, subtotal - descuentoMonto + (costoEnvio || 0));
-
-    return { totalPrendas, subtotal, descuentoMonto, total };
-  }, [items, costoEnvio, descuento]);
-
-  /* ============ Acciones filas ============ */
   const addRow = () => setItems((prev) => [...prev, emptyItem()]);
+
   const onChangeItem = <K extends keyof Item>(idx: number, key: K, value: Item[K]) => {
     setItems((prev) => {
       const next = [...prev];
@@ -84,29 +71,25 @@ export default function Remito8CHOQ() {
   const onChangeTalle = (idx: number, talle: keyof Item["talles"], value: number) => {
     setItems((prev) => {
       const next = [...prev];
-      next[idx] = { ...next[idx], talles: { ...next[idx].talles, [talle]: Math.max(0, value || 0) } };
+      const v = Math.max(0, value || 0);
+      next[idx] = { ...next[idx], talles: { ...next[idx].talles, [talle]: v } };
       return next;
     });
   };
 
-  /* ============ Descargar PDF ============ */
   const handleDownloadPDF = async () => {
-    const el = document.getElementById("remito-container");
+    const el = document.getElementById("sheet");
     if (!el) return;
-
     try {
       const [jspdfMod, html2canvasMod] = await Promise.all([import("jspdf"), import("html2canvas")]);
       const jsPDF = (jspdfMod as any).jsPDF ?? (jspdfMod as any).default;
       const html2canvas = (html2canvasMod as any).default ?? html2canvasMod;
-
       const canvas = await html2canvas(el, { scale: 2, backgroundColor: "#ffffff" });
       const imgData = canvas.toDataURL("image/png");
-
       const pdf = new jsPDF("p", "mm", "a4");
       const pageWidth = 210;
       const imgProps = (pdf as any).getImageProperties(imgData);
       const pdfHeight = (imgProps.height * pageWidth) / imgProps.width;
-
       pdf.addImage(imgData, "PNG", 0, 0, pageWidth, pdfHeight);
       pdf.save(`Remito-${cliente || "8CHOQ"}.pdf`);
     } catch {
@@ -116,36 +99,23 @@ export default function Remito8CHOQ() {
 
   return (
     <div className="page">
-      <div className="sheet a4" id="remito-container">
-        {/* Header */}
-        <div className="header">
-          <div className="logoWrap">
-            <img src="/logo-8choq.png" alt="8CHOQ" width={90} height={40} />
-          </div>
-          <h1>Sistema de Remitos 8CHOQ (Prototipo)</h1>
+      <div className="a4 sheet" id="sheet">
+        {/* LOGO */}
+        <div className="logoRow thick">
+          <img src="/logo-8choq.png" alt="8CHOQ" className="logo" />
         </div>
 
-        {/* Datos */}
-        <div className="card grid2">
-          <div className="field">
-            <label>Nombre</label>
-            <input value={cliente} onChange={(e) => setCliente(e.target.value)} placeholder="Cliente" />
+        {/* BLOQUE DATOS (dos columnas) */}
+        <div className="metaGrid">
+          {/* fila 1 */}
+          <div className="cell label thick">NOMBRE</div>
+          <div className="cell thick">
+            <input value={cliente} onChange={(e) => setCliente(e.target.value)} />
           </div>
-
-          <div className="field">
-            <label>Fecha</label>
-            <input type="date" value={fecha} onChange={(e) => setFecha(e.target.value)} />
-          </div>
-
-          <div className="field">
-            <label>DNI</label>
-            <input value={dni} onChange={(e) => setDni(e.target.value)} placeholder="DNI" />
-          </div>
-
-          <div className="field">
-            <label>Envío</label>
+          <div className="cell label thick">ENVIO</div>
+          <div className="cell thick">
             <select value={envio} onChange={(e) => setEnvio(e.target.value)}>
-              <option value="">Seleccionar...</option>
+              <option value=""></option>
               {envios.map((v) => (
                 <option key={v} value={v}>
                   {v}
@@ -154,22 +124,15 @@ export default function Remito8CHOQ() {
             </select>
           </div>
 
-          <div className="field">
-            <label>Vendedor</label>
-            <select value={vendedor} onChange={(e) => setVendedor(e.target.value)}>
-              <option value="">Seleccionar...</option>
-              {vendedores.map((v) => (
-                <option key={v} value={v}>
-                  {v}
-                </option>
-              ))}
-            </select>
+          {/* fila 2 */}
+          <div className="cell label thick">FECHA</div>
+          <div className="cell thick">
+            <input type="date" value={fecha} onChange={(e) => setFecha(e.target.value)} />
           </div>
-
-          <div className="field">
-            <label>Método de Pago</label>
+          <div className="cell label thick">METODO DE PAGO</div>
+          <div className="cell thick">
             <select value={metodoPago} onChange={(e) => setMetodoPago(e.target.value)}>
-              <option value="">Seleccionar...</option>
+              <option value=""></option>
               {metodosPago.map((v) => (
                 <option key={v} value={v}>
                   {v}
@@ -178,65 +141,60 @@ export default function Remito8CHOQ() {
             </select>
           </div>
 
-          <div className="field">
-            <label>Descuento</label>
-            <select value={descuento} onChange={(e) => setDescuento(Number(e.target.value))}>
-              {descuentos.map((d) => (
-                <option key={d.value} value={d.value}>
-                  {d.label}
+          {/* fila 3 */}
+          <div className="cell label thick">DNI</div>
+          <div className="cell thick">
+            <input value={dni} onChange={(e) => setDni(e.target.value)} />
+          </div>
+          <div className="cell label thick">PROVINCIA/ LOCALIDAD</div>
+          <div className="cell thick">
+            <input value={provincia} onChange={(e) => setProvincia(e.target.value)} />
+          </div>
+
+          {/* fila 4 (vendedor toda la fila derecha) */}
+          <div className="cell label thick">VENDEDOR</div>
+          <div className="cell span3 thick">
+            <select value={vendedor} onChange={(e) => setVendedor(e.target.value)}>
+              <option value=""></option>
+              {vendedores.map((v) => (
+                <option key={v} value={v}>
+                  {v}
                 </option>
               ))}
             </select>
           </div>
-
-          <div className="field">
-            <label>Provincia / Localidad</label>
-            <input value={provincia} onChange={(e) => setProvincia(e.target.value)} placeholder="Provincia / Localidad" />
-          </div>
-
-          <div className="field">
-            <label>Costo de Envío ($)</label>
-            <input type="number" value={costoEnvio} onChange={(e) => setCostoEnvio(Number(e.target.value))} min={0} />
-          </div>
         </div>
 
-        {/* Tabla */}
-        <div className="card">
-          {/* Encabezado alineado con la grilla de filas */}
-          <div className="tableHead">
-            <div className="col code">Código</div>
-            <div className="col articulo">Artículo</div>
-            <div className="col pagar">A Pagar</div>
-            <div className="sizesHead">
-              {["S", "M", "L", "XL", "XXL", "XXXL", "Cant"].map((l) => (
-                <div key={l}>{l}</div>
-              ))}
-            </div>
-          </div>
+        {/* ENCABEZADO DE TABLA */}
+        <div className="tableHead thick">
+          <div className="h cell center">CODIGO</div>
+          <div className="h cell center">ARTICULO</div>
+          <div className="h cell center">A PAGAR</div>
+          <div className="h cell center">S</div>
+          <div className="h cell center">M</div>
+          <div className="h cell center">L</div>
+          <div className="h cell center">XL</div>
+          <div className="h cell center">XXL</div>
+          <div className="h cell center">XXXL</div>
+          <div className="h cell center">CANTIDAD</div>
+          <div className="h cell center">TOTAL</div>
+        </div>
 
+        {/* FILAS */}
+        <div className="rows">
           {items.map((it, i) => {
-            const cant =
-              it.talles.S + it.talles.M + it.talles.L + it.talles.XL + it.talles.XXL + it.talles.XXXL;
+            const cant = it.talles.S + it.talles.M + it.talles.L + it.talles.XL + it.talles.XXL + it.talles.XXXL;
+            const totalItem = (it.aPagar || 0) * cant;
 
             return (
               <div className="row" key={i}>
-                <div className="col code">
-                  <input
-                    placeholder="Código"
-                    value={it.codigo}
-                    onChange={(e) => onChangeItem(i, "codigo", e.target.value)}
-                  />
+                <div className="cell">
+                  <input value={it.codigo} onChange={(e) => onChangeItem(i, "codigo", e.target.value)} />
                 </div>
-
-                <div className="col articulo">
-                  <input
-                    placeholder="Nombre de la prenda"
-                    value={it.articulo}
-                    onChange={(e) => onChangeItem(i, "articulo", e.target.value)}
-                  />
+                <div className="cell">
+                  <input value={it.articulo} onChange={(e) => onChangeItem(i, "articulo", e.target.value)} />
                 </div>
-
-                <div className="col pagar">
+                <div className="cell">
                   <input
                     type="number"
                     min={0}
@@ -245,172 +203,152 @@ export default function Remito8CHOQ() {
                   />
                 </div>
 
-                <div className="col sizesGrid">
-                  {(["S", "M", "L", "XL", "XXL", "XXXL"] as const).map((talle) => (
-                    <div className="qtyCell" key={talle}>
-                      <input
-                        type="number"
-                        min={0}
-                        value={(it.talles as any)[talle]}
-                        onChange={(e) => onChangeTalle(i, talle, Number(e.target.value))}
-                      />
-                    </div>
-                  ))}
-                  <div className="qtyCell totalQty">
-                    <span>{cant}</span>
+                {(["S", "M", "L", "XL", "XXL", "XXXL"] as const).map((t) => (
+                  <div className="cell center" key={t}>
+                    <input
+                      className="qty"
+                      type="number"
+                      min={0}
+                      value={(it.talles as any)[t]}
+                      onChange={(e) => onChangeTalle(i, t, Number(e.target.value))}
+                    />
                   </div>
-                </div>
+                ))}
+
+                <div className="cell right mono">{cant}</div>
+                <div className="cell right mono">${totalItem.toFixed(2)}</div>
               </div>
             );
           })}
-
-          {/* Acciones de filas (no se imprime) */}
-          <div className="rowActions no-print">
-            <button className="btn ghost" onClick={addRow}>
-              + Agregar fila
-            </button>
-          </div>
         </div>
 
-        {/* Totales inferiores */}
-        <div className="totalsWrap">
-          <div className="totRow">
-            <span>Total Prendas</span>
-            <b>{totals.totalPrendas}</b>
+        {/* PIE – TOTALES */}
+        <div className="footGrid">
+          <div className="cell label thick span9 right">TOTAL PRENDAS</div>
+          <div className="cell thick right mono">{totals.totalPrendas}</div>
+          <div className="cell thick"></div>
+
+          <div className="cell label thick span9 right">ENVIO</div>
+          <div className="cell thick right">
+            <input
+              className="right"
+              type="number"
+              min={0}
+              value={costoEnvio}
+              onChange={(e) => setCostoEnvio(Number(e.target.value))}
+            />
           </div>
-          <div className="totRow">
-            <span>Subtotal</span>
-            <b>${totals.subtotal}</b>
-          </div>
-          <div className="totRow">
-            <span>Descuento</span>
-            <b>-${totals.descuentoMonto}</b>
-          </div>
-          <div className="totRow">
-            <span>Envío</span>
-            <b>${costoEnvio || 0}</b>
-          </div>
-          <div className="totRow grand">
-            <span>TOTAL</span>
-            <b>${totals.total}</b>
-          </div>
+          <div className="cell thick"></div>
+
+          <div className="cell label thick span9 right">TOTAL</div>
+          <div className="cell thick right mono">${totals.total.toFixed(2)}</div>
+          <div className="cell thick"></div>
         </div>
       </div>
 
-      {/* Acciones (no se imprimen) */}
-      <div className="footerActions no-print">
-        <button className="btn" onClick={handleDownloadPDF}>
-          Descargar PDF
-        </button>
+      {/* Acciones (no print) */}
+      <div className="actions no-print">
+        <button onClick={addRow}>+ Agregar fila</button>
+        <button onClick={handleDownloadPDF}>Descargar PDF</button>
       </div>
 
-      {/* ======== ESTILOS ======== */}
       <style jsx>{`
         :root {
-          --card: #ffffff;
-          --stroke: #e5e7eb;
-          --muted: #6b7280;
-          --text: #111827;
-          --bg: #f7f7f7;
-          --radius: 12px;
+          --line: #000;            /* líneas negras como planilla */
+          --light: #e5e7eb;
+          --bg: #fff;
+          --text: #000;
+          --label: #000;
+          --font: 13.5px;          /* tamaño base parecido a tu hoja */
+          --rowH: 32px;            /* alto de fila tipo Excel */
+          --thick: 2px;            /* grosor de líneas gruesas */
+          --thin: 1px;
         }
         * { box-sizing: border-box; }
-        body { background: var(--bg); }
+        body { background: #f6f6f6; }
 
-        .page {
-          display: flex; flex-direction: column; align-items: center;
-          gap: 16px; padding: 16px 10px 48px;
-        }
-        .sheet.a4 {
-          width: 794px; background: #fff; color: var(--text);
-          box-shadow: 0 6px 20px rgba(0,0,0,.08);
-          border-radius: var(--radius);
-          padding: 18px 18px 12px;
+        .page { display:flex; flex-direction:column; align-items:center; gap:12px; padding:16px; }
+        .a4.sheet {
+          width: 794px; background: var(--bg); color: var(--text);
+          box-shadow: 0 6px 24px rgba(0,0,0,.08);
+          padding: 8px;   /* bordes finos */
         }
 
-        .header {
-          display: grid; grid-template-columns: 110px 1fr;
-          align-items: center; gap: 12px; margin-bottom: 10px;
+        .thick { border: var(--thick) solid var(--line); }
+        .logoRow {
+          height: 90px; display:flex; align-items:center; justify-content:center; margin-bottom: 6px;
         }
-        .logoWrap {
-          display:flex; align-items:center; justify-content:center;
-          height: 46px; border:1px solid var(--stroke); border-radius:10px; background:#fff;
-        }
-        h1 { font-size: 18px; margin: 0; }
+        .logo { height: 84px; object-fit: contain; }
 
-        .card {
-          background: var(--card);
-          border: 1px solid var(--stroke);
-          border-radius: var(--radius);
-          padding: 12px;
-          margin-bottom: 10px;
-        }
-
-        .grid2 {
-          display: grid; grid-template-columns: 1fr 1fr; gap: 10px 10px;
-        }
-        .field { display: grid; gap: 6px; }
-        .field label { font-size: 12px; color: var(--muted); }
-        .field input, .field select {
-          height: 36px; border: 1px solid var(--stroke); border-radius: 10px; padding: 0 10px; outline: none;
-        }
-
-        /* Tabla: 4 columnas -> code | articulo | pagar | sizesGrid */
-        .tableHead, .row {
+        /* Meta grid (dos columnas) — 4 filas */
+        .metaGrid {
           display: grid;
-          grid-template-columns: 160px 1fr 120px 1fr;
-          gap: 8px; align-items: center;
+          grid-template-columns: 160px 1fr 180px 1fr;  /* medidas similares a tu hoja */
+          gap: 0; font-size: var(--font); margin-bottom: 6px;
         }
-        .tableHead { padding: 4px 2px 8px; }
-        .tableHead .col { font-size: 12px; color: var(--muted); }
-        .sizesHead {
-          display: grid; grid-template-columns: repeat(7, 56px);
-          column-gap: 12px; justify-content: center; text-align: center; font-size: 12px; color: var(--muted);
-        }
-
-        .row { padding: 6px 2px; }
-        .row + .row { border-top: 1px dashed var(--stroke); }
-
-        .col.code input, .col.articulo input, .col.pagar input {
-          width: 100%; height: 34px; border: 1px solid var(--stroke);
-          border-radius: 10px; padding: 0 10px;
+        .metaGrid .cell { border: var(--thin) solid var(--line); height: var(--rowH); display:flex; align-items:center; padding: 0 8px; }
+        .metaGrid .label { font-weight: 800; }
+        .metaGrid .span3 { grid-column: span 3; }
+        .metaGrid input, .metaGrid select {
+          width: 100%; height: calc(var(--rowH) - 6px); border: none; outline: none; font-size: var(--font);
+          background: transparent;
         }
 
-        /* --- MÁS AIRE ENTRE TALLES --- */
-        .sizesGrid {
-          display: grid; grid-template-columns: repeat(7, 56px); /* S M L XL XXL XXXL Cant */
-          column-gap: 12px; row-gap: 8px; justify-content: center; align-items: center;
+        /* Head de tabla */
+        .tableHead {
+          display: grid;
+          grid-template-columns: 110px 1fr 100px repeat(6, 56px) 110px 120px; /* CÓDIGO/ARTÍCULO/A PAGAR + 6 talles + CANT + TOTAL */
+          gap: 0; height: var(--rowH); margin-bottom: 0;
         }
-        .qtyCell { display:flex; align-items:center; justify-content:center; }
-        .qtyCell input[type="number"] {
-          width: 56px; height: 34px; text-align: center; font-size: 14px;
-          border: 1px solid var(--stroke); border-radius: 10px; padding: 2px 6px;
+        .tableHead .cell {
+          border: var(--thin) solid var(--line);
+          display:flex; align-items:center; justify-content:center;
+          font-weight: 800; font-size: var(--font);
         }
-        .qtyCell.totalQty span { font-weight: 600; }
+        .center { text-align:center; }
+        .right { text-align:right; justify-content: flex-end; }
+        .mono { font-variant-numeric: tabular-nums; }
 
-        .rowActions { padding-top: 8px; }
-        .btn { height: 36px; padding: 0 14px; border-radius: 10px; border: 1px solid var(--stroke); background: #fff; cursor: pointer; }
-        .btn.ghost { background: #fff; }
-
-        /* Totales */}
-        .totalsWrap {
-          width: 280px; margin-left: auto; background: #fff; border: 1px solid var(--stroke);
-          border-radius: var(--radius); padding: 10px 12px; display: grid; gap: 6px;
+        /* Filas */
+        .rows .row {
+          display: grid;
+          grid-template-columns: 110px 1fr 100px repeat(6, 56px) 110px 120px;
+          gap: 0;
+          min-height: var(--rowH);
         }
-        .totRow { display: grid; grid-template-columns: 1fr auto; align-items: center; font-size: 14px; }
-        .totRow span { color: var(--muted); }
-        .totRow.grand span { color: #111; font-weight: 600; }
-        .totRow b { font-weight: 700; }
+        .rows .cell {
+          border: var(--thin) solid var(--line);
+          display:flex; align-items:center; padding: 0 8px;
+        }
+        .rows input {
+          width: 100%; height: calc(var(--rowH) - 6px); border: none; outline: none; font-size: var(--font);
+          background: transparent; text-align: left;
+        }
+        .rows input.qty { text-align: center; }
 
-        .footerActions { width: 794px; display: flex; justify-content: flex-end; gap: 8px; }
+        /* Totales pie */
+        .footGrid {
+          display: grid;
+          grid-template-columns: 110px 1fr 100px repeat(6, 56px) 110px 120px;
+          margin-top: 4px;
+        }
+        .footGrid .cell {
+          border: var(--thin) solid var(--line); height: var(--rowH);
+          display:flex; align-items:center; padding: 0 8px;
+        }
+        .footGrid .span9 { grid-column: 1 / span 9; } /* texto al pie ocupa hasta antes de Cant/Total */
 
-        /* ---- PRINT ---- */
+        /* Acciones */
+        .actions { width: 794px; display:flex; gap: 10px; justify-content: flex-end; }
+        .actions button {
+          height: 34px; padding: 0 14px; border: 1px solid #d1d5db; background: #fff; border-radius: 8px; cursor: pointer;
+        }
+
         @media print {
           .no-print { display: none !important; }
           body { background: #fff; }
           .page { padding: 0; }
-          .sheet.a4 { box-shadow: none; width: 210mm; padding: 10mm; }
-          .totalsWrap { break-inside: avoid; }
+          .a4.sheet { box-shadow: none; width: 210mm; padding: 6mm; }
         }
       `}</style>
     </div>
