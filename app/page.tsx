@@ -2,15 +2,7 @@
 
 import { useMemo, useState } from "react";
 
-type Talles = {
-  S: string;
-  M: string;
-  L: string;
-  XL: string;
-  XXL: string;
-  XXXL: string;
-};
-
+type Talles = { S: string; M: string; L: string; XL: string; XXL: string; XXXL: string };
 type Item = {
   codigo: string;
   articulo: string;
@@ -27,46 +19,24 @@ const emptyItem = (): Item => ({
   talles: { S: "0", M: "0", L: "0", XL: "0", XXL: "0", XXXL: "0" },
 });
 
-export default function Remito8CHOQ() {
-  // ------- Encabezado -------
+export default function Page() {
+  // encabezado
   const [cliente, setCliente] = useState("");
-  const [fecha, setFecha] = useState<string>(
-    new Date().toISOString().slice(0, 10)
-  );
+  const [fecha, setFecha] = useState<string>(new Date().toISOString().slice(0, 10));
   const [dni, setDni] = useState("");
   const [vendedor, setVendedor] = useState("");
   const [envio, setEnvio] = useState("");
   const [metodoPago, setMetodoPago] = useState("");
   const [provincia, setProvincia] = useState("Mendoza");
-  const [costoEnvio, setCostoEnvio] = useState<string>("0");
-  const [descuento, setDescuento] = useState<number>(0);
+  const [costoEnvio, setCostoEnvio] = useState("0");
+  const [descuento, setDescuento] = useState(0);
 
-  // ------- Items -------
-  const [items, setItems] = useState<Item[]>(
-    Array.from({ length: DEFAULT_ROWS }, () => emptyItem())
-  );
+  // filas
+  const [items, setItems] = useState<Item[]>(Array.from({ length: DEFAULT_ROWS }, emptyItem));
 
-  // ------- Catálogos -------
   const vendedores = ["Nacho", "Santi", "Paula", "Malena"];
-  const envios = [
-    "Correo - Sucursal",
-    "Correo - Domicilio",
-    "Andreani - Sucursal",
-    "Andreani - Domicilio",
-    "OCA",
-    "Send Box",
-    "Retira",
-    "Domicilio",
-  ];
-  const metodosPago = [
-    "MP 1 cuota",
-    "MP 3 cuotas",
-    "Transferencia 1",
-    "Transferencia 2",
-    "Efectivo",
-    "Débito",
-    "QR",
-  ];
+  const envios = ["Correo - Sucursal", "Correo - Domicilio", "Andreani - Sucursal", "Andreani - Domicilio", "OCA", "Send Box", "Retira", "Domicilio"];
+  const metodosPago = ["MP 1 cuota", "MP 3 cuotas", "Transferencia 1", "Transferencia 2", "Efectivo", "Débito", "QR"];
   const descuentos = [
     { label: "Sin descuento", value: 0 },
     { label: "Mayorista 5%", value: 5 },
@@ -75,37 +45,20 @@ export default function Remito8CHOQ() {
     { label: "Promo 20%", value: 20 },
   ];
 
-  // ------- Update helpers -------
-  const updateItem = (idx: number, key: keyof Item, value: string) => {
-    setItems((prev) => prev.map((r, i) => (i === idx ? { ...r, [key]: value } : r)));
-  };
+  const updateItem = (i: number, key: keyof Item, value: string) =>
+    setItems(prev => prev.map((r, idx) => (idx === i ? { ...r, [key]: value } : r)));
 
-  const updateTalle = (idx: number, talle: keyof Item["talles"], value: string) => {
-    setItems((prev) =>
-      prev.map((r, i) =>
-        i === idx ? { ...r, talles: { ...r.talles, [talle]: value } } : r
-      )
-    );
-  };
+  const updateTalle = (i: number, talla: keyof Talles, value: string) =>
+    setItems(prev => prev.map((r, idx) => (idx === i ? { ...r, talles: { ...r.talles, [talla]: value } } : r)));
 
-  const addRow = () => setItems((prev) => [...prev, emptyItem()]);
-  const clearTable = () =>
-    setItems(Array.from({ length: DEFAULT_ROWS }, () => emptyItem()));
+  const addRow = () => setItems(prev => [...prev, emptyItem()]);
 
-  // ------- Totales -------
-  const {
-    totalPrendas,
-    subtotal,
-    descuentoMonto,
-    envioMonto,
-    total,
-    lineTotals,
-    lineQty,
-  } = useMemo(() => {
+  // totales
+  const { lineQty, lineTotal, totalPrendas, subtotal, descuentoMonto, envioMonto, total } = useMemo(() => {
+    const qty: number[] = [];
+    const tot: number[] = [];
     let prendas = 0;
     let sub = 0;
-    const qty: number[] = [];
-    const totales: number[] = [];
 
     items.forEach((it, i) => {
       const q =
@@ -116,360 +69,301 @@ export default function Remito8CHOQ() {
         (parseInt(it.talles.XXL || "0") || 0) +
         (parseInt(it.talles.XXXL || "0") || 0);
 
-      const precio = parseFloat(it.aPagar || "0") || 0;
-      const t = precio * q;
+      const p = parseFloat(it.aPagar || "0") || 0;
+      const t = q * p;
+
+      qty[i] = q;
+      tot[i] = t;
 
       prendas += q;
       sub += t;
-
-      qty[i] = q;
-      totales[i] = t;
     });
 
-    const descMonto = (sub * descuento) / 100;
-    const envioNum = parseFloat(costoEnvio || "0") || 0;
-    const tot = sub - descMonto + envioNum;
+    const desc = (sub * descuento) / 100;
+    const env = parseFloat(costoEnvio || "0") || 0;
+    const totGeneral = sub - desc + env;
 
-    return {
-      totalPrendas: prendas,
-      subtotal: sub,
-      descuentoMonto: descMonto,
-      envioMonto: envioNum,
-      total: tot,
-      lineTotals: totales,
-      lineQty: qty,
-    };
+    return { lineQty: qty, lineTotal: tot, totalPrendas: prendas, subtotal: sub, descuentoMonto: desc, envioMonto: env, total: totGeneral };
   }, [items, descuento, costoEnvio]);
 
-  // ------- PDF -------
-  const handleDownloadPDF = async () => {
-    const el = document.getElementById("sheet");
-    if (!el) return;
+  const handlePDF = async () => {
+    const node = document.getElementById("sheet");
+    if (!node) return;
+    const [jspdfMod, html2canvasMod] = await Promise.all([import("jspdf"), import("html2canvas")]);
+    const jsPDF = (jspdfMod as any).jsPDF ?? (jspdfMod as any).default;
+    const html2canvas = (html2canvasMod as any).default ?? (html2canvasMod as any);
 
-    try {
-      const [jsPDFmod, html2canvasMod] = await Promise.all([
-        import("jspdf"),
-        import("html2canvas"),
-      ]);
-      const jsPDF = (jsPDFmod as any).jsPDF ?? (jsPDFmod as any).default;
-      const html2canvas =
-        (html2canvasMod as any).default ?? (html2canvasMod as any);
-
-      const canvas = await html2canvas(el, { scale: 2 });
-      const imgData = canvas.toDataURL("image/png");
-      const pdf = new jsPDF("p", "mm", "a4");
-
-      const pageWidth = 210;
-      const imgProps = pdf.getImageProperties(imgData);
-      const pdfHeight = (imgProps.height * pageWidth) / imgProps.width;
-
-      pdf.addImage(imgData, "PNG", 0, 0, pageWidth, pdfHeight);
-      pdf.save(`Remito-${cliente || "8CHOQ"}.pdf`);
-    } catch (err) {
-      console.error("Error generando PDF:", err);
-    }
+    const canvas = await html2canvas(node, { scale: 2 });
+    const img = canvas.toDataURL("image/png");
+    const pdf = new jsPDF("p", "mm", "a4");
+    const pageW = 210;
+    const props = pdf.getImageProperties(img);
+    const h = (props.height * pageW) / props.width;
+    pdf.addImage(img, "PNG", 0, 0, pageW, h);
+    pdf.save(`Remito-${cliente || "8CHOQ"}.pdf`);
   };
 
   return (
-    <main className="flex justify-center">
-      {/* hoja con borde grueso tipo planilla (ancho fijo para que entre todo) */}
-      <div
-        id="sheet"
-        className="mx-auto my-6 w-[1120px] max-w-full rounded-[6px] border-4 border-gray-800 bg-white p-5 print:w-[1120px]"
-      >
-        {/* Cabecera estilo planilla con bordes gruesos en cada bloque */}
-        <div className="grid grid-cols-12 gap-3">
-          <div className="col-span-5 grid grid-cols-12 gap-2">
-            <div className="col-span-12">
-              <div className="border-2 border-gray-800 px-3 py-1 text-sm font-bold">
-                NOMBRE
-              </div>
-              <input
-                className="h-10 w-full border-x-2 border-b-2 border-gray-800 px-3 outline-none"
-                placeholder="Cliente"
-                value={cliente}
-                onChange={(e) => setCliente(e.target.value)}
-              />
-            </div>
+    <main className="page">
+      <div id="sheet" className="sheet">
+        {/* LOGO */}
+        <table className="full">
+          <colgroup>
+            <col style={{ width: "200px" }} />
+            <col />
+          </colgroup>
+          <tbody>
+            <tr>
+              <td className="cell thick all-center" style={{ height: 76 }}>
+                <div className="logo">8CHOQ</div>
+              </td>
+              <td className="cell thick"></td>
+            </tr>
+          </tbody>
+        </table>
 
-            <div className="col-span-12 grid grid-cols-12 gap-2">
-              <div className="col-span-6">
-                <div className="border-2 border-gray-800 px-3 py-1 text-sm font-bold">
-                  FECHA
-                </div>
-                <input
-                  type="date"
-                  className="h-10 w-full border-x-2 border-b-2 border-gray-800 px-3 outline-none"
-                  value={fecha}
-                  onChange={(e) => setFecha(e.target.value)}
-                />
-              </div>
-              <div className="col-span-6">
-                <div className="border-2 border-gray-800 px-3 py-1 text-sm font-bold">
-                  DNI
-                </div>
-                <input
-                  className="h-10 w-full border-x-2 border-b-2 border-gray-800 px-3 outline-none"
-                  placeholder="DNI"
-                  value={dni}
-                  onChange={(e) => setDni(e.target.value)}
-                />
-              </div>
-            </div>
-          </div>
-
-          <div className="col-span-7 grid grid-cols-12 gap-2">
-            <div className="col-span-12">
-              <div className="border-2 border-gray-800 px-3 py-1 text-sm font-bold">
-                ENVÍO
-              </div>
-              <select
-                className="h-10 w-full border-x-2 border-b-2 border-gray-800 px-3 outline-none"
-                value={envio}
-                onChange={(e) => setEnvio(e.target.value)}
-              >
-                <option value="">Seleccionar...</option>
-                {envios.map((e) => (
-                  <option key={e} value={e}>
-                    {e}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div className="col-span-12">
-              <div className="border-2 border-gray-800 px-3 py-1 text-sm font-bold">
-                MÉTODO DE PAGO
-              </div>
-              <select
-                className="h-10 w-full border-x-2 border-b-2 border-gray-800 px-3 outline-none"
-                value={metodoPago}
-                onChange={(e) => setMetodoPago(e.target.value)}
-              >
-                <option value="">Seleccionar...</option>
-                {metodosPago.map((m) => (
-                  <option key={m} value={m}>
-                    {m}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div className="col-span-9">
-              <div className="border-2 border-gray-800 px-3 py-1 text-sm font-bold">
-                PROVINCIA / LOCALIDAD
-              </div>
-              <input
-                className="h-10 w-full border-x-2 border-b-2 border-gray-800 px-3 outline-none"
-                value={provincia}
-                onChange={(e) => setProvincia(e.target.value)}
-              />
-            </div>
-
-            <div className="col-span-3">
-              <div className="border-2 border-gray-800 px-3 py-1 text-sm font-bold">
-                COSTO DE ENVÍO ($)
-              </div>
-              <input
-                className="h-10 w-full border-x-2 border-b-2 border-gray-800 px-3 text-right outline-none"
-                value={costoEnvio}
-                onChange={(e) => setCostoEnvio(e.target.value)}
-                inputMode="decimal"
-                placeholder="0"
-              />
-            </div>
-          </div>
-        </div>
-
-        {/* Vendedor + Descuento */}
-        <div className="mt-3 grid grid-cols-12 gap-3">
-          <div className="col-span-6">
-            <div className="border-2 border-gray-800 px-3 py-1 text-sm font-bold">
-              VENDEDOR
-            </div>
-            <select
-              className="h-10 w-full border-x-2 border-b-2 border-gray-800 px-3 outline-none"
-              value={vendedor}
-              onChange={(e) => setVendedor(e.target.value)}
-            >
-              <option value="">Seleccionar...</option>
-              {vendedores.map((v) => (
-                <option key={v} value={v}>
-                  {v}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div className="col-span-6">
-            <div className="border-2 border-gray-800 px-3 py-1 text-sm font-bold">
-              DESCUENTO
-            </div>
-            <select
-              className="h-10 w-full border-x-2 border-b-2 border-gray-800 px-3 outline-none"
-              value={descuento}
-              onChange={(e) => setDescuento(parseInt(e.target.value))}
-            >
-              {descuentos.map((d) => (
-                <option key={d.value} value={d.value}>
-                  {d.label}
-                </option>
-              ))}
-            </select>
-          </div>
-        </div>
-
-        {/* Tabla de items (bordes tipo planilla) */}
-        <div className="mt-4 rounded-[6px] border-2 border-gray-800 p-2">
-          {/* Encabezado de columnas con borde inferior grueso */}
-          <div className="grid grid-cols-[120px_280px_110px_repeat(6,65px)_100px_120px] items-center border-b-2 border-gray-800 pb-2 text-sm font-bold">
-            <div className="px-2">CÓDIGO</div>
-            <div className="px-2">ARTÍCULO</div>
-            <div className="px-2">A PAGAR</div>
-            <div className="px-2 text-center">S</div>
-            <div className="px-2 text-center">M</div>
-            <div className="px-2 text-center">L</div>
-            <div className="px-2 text-center">XL</div>
-            <div className="px-2 text-center">XXL</div>
-            <div className="px-2 text-center">XXXL</div>
-            <div className="px-2 text-center">CANTIDAD</div>
-            <div className="px-2 text-right">TOTAL</div>
-          </div>
-
-          {/* Filas */}
-          <div className="divide-y divide-gray-300">
-            {items.map((it, i) => {
-              const cantidad = lineQty[i] ?? 0;
-              const totalLinea = lineTotals[i] ?? 0;
-
-              return (
-                <div
-                  key={i}
-                  className="grid grid-cols-[120px_280px_110px_repeat(6,65px)_100px_120px] items-center py-1"
-                >
-                  {/* Código */}
-                  <div className="px-2">
-                    <input
-                      className="h-9 w-[116px] rounded-sm border border-gray-400 px-2 outline-none"
-                      placeholder="Código"
-                      value={it.codigo}
-                      onChange={(e) => updateItem(i, "codigo", e.target.value)}
-                    />
-                  </div>
-
-                  {/* Artículo */}
-                  <div className="px-2">
-                    <input
-                      className="h-9 w-[272px] rounded-sm border border-gray-400 px-2 outline-none"
-                      placeholder="Artículo"
-                      value={it.articulo}
-                      onChange={(e) => updateItem(i, "articulo", e.target.value)}
-                    />
-                  </div>
-
-                  {/* A pagar */}
-                  <div className="px-2">
-                    <input
-                      className="h-9 w-[106px] rounded-sm border border-gray-400 px-2 text-right outline-none"
-                      placeholder="0"
-                      value={it.aPagar}
-                      onChange={(e) => updateItem(i, "aPagar", e.target.value)}
-                      inputMode="decimal"
-                    />
-                  </div>
-
-                  {/* Talles */}
-                  {(["S", "M", "L", "XL", "XXL", "XXXL"] as const).map((t) => (
-                    <div key={t} className="px-2 text-center">
-                      <input
-                        className="h-9 w-[56px] rounded-sm border border-gray-400 text-center outline-none"
-                        placeholder="0"
-                        value={it.talles[t]}
-                        onChange={(e) => updateTalle(i, t, e.target.value)}
-                        inputMode="numeric"
-                      />
-                    </div>
+        {/* CABECERA */}
+        <table className="full mt8">
+          <colgroup>
+            <col style={{ width: "170px" }} />
+            <col style={{ width: "370px" }} />
+            <col style={{ width: "170px" }} />
+            <col style={{ width: "370px" }} />
+          </colgroup>
+          <tbody>
+            <tr>
+              <td className="cell thick header">NOMBRE</td>
+              <td className="cell thick">
+                <input className="in" value={cliente} onChange={e => setCliente(e.target.value)} placeholder="Cliente" />
+              </td>
+              <td className="cell thick header">ENVÍO</td>
+              <td className="cell thick">
+                <select className="in" value={envio} onChange={e => setEnvio(e.target.value)}>
+                  <option value="">Seleccionar...</option>
+                  {envios.map(v => (
+                    <option key={v} value={v}>
+                      {v}
+                    </option>
                   ))}
+                </select>
+              </td>
+            </tr>
 
-                  {/* Cantidad */}
-                  <div className="px-2 text-center">{cantidad}</div>
+            <tr>
+              <td className="cell thick header">FECHA</td>
+              <td className="cell thick">
+                <input type="date" className="in" value={fecha} onChange={e => setFecha(e.target.value)} />
+              </td>
+              <td className="cell thick header">MÉTODO DE PAGO</td>
+              <td className="cell thick">
+                <select className="in" value={metodoPago} onChange={e => setMetodoPago(e.target.value)}>
+                  <option value="">Seleccionar...</option>
+                  {metodosPago.map(v => (
+                    <option key={v} value={v}>
+                      {v}
+                    </option>
+                  ))}
+                </select>
+              </td>
+            </tr>
 
-                  {/* Total */}
-                  <div className="px-2 text-right">${totalLinea.toFixed(2)}</div>
-                </div>
-              );
-            })}
-          </div>
+            <tr>
+              <td className="cell thick header">DNI</td>
+              <td className="cell thick">
+                <input className="in" value={dni} onChange={e => setDni(e.target.value)} placeholder="DNI" />
+              </td>
+              <td className="cell thick header">PROVINCIA / LOCALIDAD</td>
+              <td className="cell thick">
+                <input className="in" value={provincia} onChange={e => setProvincia(e.target.value)} />
+              </td>
+            </tr>
 
-          {/* Línea gruesa antes del total prendas */}
-          <div className="mt-2 border-t-2 border-gray-800 pt-2 text-center text-sm font-bold">
-            TOTAL PRENDAS
-          </div>
-          <div className="text-center text-base">{totalPrendas}</div>
-        </div>
+            <tr>
+              <td className="cell thick header">VENDEDOR</td>
+              <td className="cell thick">
+                <select className="in" value={vendedor} onChange={e => setVendedor(e.target.value)}>
+                  <option value="">Seleccionar...</option>
+                  {vendedores.map(v => (
+                    <option key={v} value={v}>
+                      {v}
+                    </option>
+                  ))}
+                </select>
+              </td>
+              <td className="cell thick header">COSTO DE ENVÍO ($)</td>
+              <td className="cell thick">
+                <input className="in right" value={costoEnvio} onChange={e => setCostoEnvio(e.target.value)} inputMode="decimal" />
+              </td>
+            </tr>
 
-        {/* Totales a la derecha con borde grueso exterior */}
-        <div className="mt-4 grid grid-cols-12 gap-3">
-          <div className="col-span-6 flex items-center gap-3">
-            <button
-              onClick={addRow}
-              className="rounded-md border-2 border-gray-800 px-4 py-2 text-sm hover:bg-gray-50"
-            >
-              + Agregar fila
-            </button>
-            <button
-              onClick={clearTable}
-              className="rounded-md border-2 border-gray-800 px-4 py-2 text-sm hover:bg-gray-50"
-            >
-              Limpiar
-            </button>
-          </div>
+            <tr>
+              <td className="cell thick header">DESCUENTO</td>
+              <td className="cell thick">
+                <select className="in" value={descuento} onChange={e => setDescuento(parseInt(e.target.value))}>
+                  {descuentos.map(d => (
+                    <option key={d.value} value={d.value}>
+                      {d.label}
+                    </option>
+                  ))}
+                </select>
+              </td>
+              <td className="cell thick" />
+              <td className="cell thick" />
+            </tr>
+          </tbody>
+        </table>
 
-          <div className="col-span-6">
-            <div className="ml-auto w-[360px] rounded-[6px] border-4 border-gray-800">
-              <div className="grid grid-cols-2 gap-y-0 p-3 text-[15px]">
-                <div className="border-b border-gray-300 py-2 font-semibold text-gray-700">
-                  SUBTOTAL
-                </div>
-                <div className="border-b border-gray-300 py-2 text-right font-semibold">
-                  ${subtotal.toFixed(2)}
-                </div>
+        {/* CUERPO (medidas fijas para replicar la planilla) */}
+        <table className="full mt10">
+          <colgroup>
+            <col style={{ width: "120px" }} />   {/* CODIGO */}
+            <col style={{ width: "280px" }} />   {/* ARTICULO */}
+            <col style={{ width: "110px" }} />   {/* A PAGAR */}
+            <col style={{ width: "60px" }} />    {/* S */}
+            <col style={{ width: "60px" }} />    {/* M */}
+            <col style={{ width: "60px" }} />    {/* L */}
+            <col style={{ width: "60px" }} />    {/* XL */}
+            <col style={{ width: "60px" }} />    {/* XXL */}
+            <col style={{ width: "60px" }} />    {/* XXXL */}
+            <col style={{ width: "100px" }} />   {/* CANT */}
+            <col style={{ width: "120px" }} />   {/* TOTAL */}
+          </colgroup>
+          <thead>
+            <tr>
+              <th className="cell thick headtxt left">CÓDIGO</th>
+              <th className="cell thick headtxt left">ARTÍCULO</th>
+              <th className="cell thick headtxt left">A PAGAR</th>
+              <th className="cell thick headtxt">S</th>
+              <th className="cell thick headtxt">M</th>
+              <th className="cell thick headtxt">L</th>
+              <th className="cell thick headtxt">XL</th>
+              <th className="cell thick headtxt">XXL</th>
+              <th className="cell thick headtxt">XXXL</th>
+              <th className="cell thick headtxt">CANTIDAD</th>
+              <th className="cell thick headtxt right">TOTAL</th>
+            </tr>
+          </thead>
+          <tbody>
+            {items.map((it, i) => (
+              <tr key={i}>
+                <td className="cell thin">
+                  <input className="in" placeholder="Código" value={it.codigo} onChange={e => updateItem(i, "codigo", e.target.value)} />
+                </td>
+                <td className="cell thin">
+                  <input className="in" placeholder="Artículo" value={it.articulo} onChange={e => updateItem(i, "articulo", e.target.value)} />
+                </td>
+                <td className="cell thin">
+                  <input className="in right" placeholder="0" value={it.aPagar} onChange={e => updateItem(i, "aPagar", e.target.value)} inputMode="decimal" />
+                </td>
+                {(["S", "M", "L", "XL", "XXL", "XXXL"] as const).map(t => (
+                  <td key={t} className="cell thin center">
+                    <input className="in center" value={it.talles[t]} onChange={e => updateTalle(i, t, e.target.value)} inputMode="numeric" />
+                  </td>
+                ))}
+                <td className="cell thin center">{lineQty[i] ?? 0}</td>
+                <td className="cell thin right">${(lineTotal[i] ?? 0).toFixed(2)}</td>
+              </tr>
+            ))}
+          </tbody>
+          <tfoot>
+            <tr>
+              <td className="cell thick" colSpan={9} />
+              <td className="cell thick headtxt center">TOTAL PRENDAS</td>
+              <td className="cell thick right">{totalPrendas}</td>
+            </tr>
+            <tr>
+              <td className="cell thick" colSpan={9} />
+              <td className="cell thin headtxt right">SUBTOTAL</td>
+              <td className="cell thin right">${subtotal.toFixed(2)}</td>
+            </tr>
+            <tr>
+              <td className="cell thick" colSpan={9} />
+              <td className="cell thin headtxt right">DESCUENTO {descuento ? `(${descuento}%)` : ""}</td>
+              <td className="cell thin right">-${descuentoMonto.toFixed(2)}</td>
+            </tr>
+            <tr>
+              <td className="cell thick" colSpan={9} />
+              <td className="cell thin headtxt right">ENVÍO</td>
+              <td className="cell thin right">${envioMonto.toFixed(2)}</td>
+            </tr>
+            <tr>
+              <td className="cell thick" colSpan={9} />
+              <td className="cell thick headtxt right">TOTAL</td>
+              <td className="cell thick right">${total.toFixed(2)}</td>
+            </tr>
+          </tfoot>
+        </table>
 
-                <div className="border-b border-gray-300 py-2 font-semibold text-gray-700">
-                  DESCUENTO {descuento ? `(${descuento}%)` : ""}
-                </div>
-                <div className="border-b border-gray-300 py-2 text-right font-semibold">
-                  -${descuentoMonto.toFixed(2)}
-                </div>
-
-                <div className="border-b border-gray-300 py-2 font-semibold text-gray-700">
-                  ENVÍO
-                </div>
-                <div className="border-b border-gray-300 py-2 text-right font-semibold">
-                  ${envioMonto.toFixed(2)}
-                </div>
-
-                <div className="col-span-2 mt-2 border-t-2 border-gray-800 pt-2 text-xl font-extrabold">
-                  <div className="flex items-center justify-between">
-                    <span>TOTAL</span>
-                    <span>${total.toFixed(2)}</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Acciones */}
-        <div className="mt-4 flex justify-end gap-3">
-          <button
-            onClick={handleDownloadPDF}
-            className="rounded-md border-2 border-gray-800 px-4 py-2 hover:bg-gray-50"
-          >
-            Descargar PDF
-          </button>
+        {/* botones */}
+        <div className="btns">
+          <button className="btn" onClick={addRow}>+ Agregar fila</button>
+          <button className="btn" onClick={handlePDF}>Descargar PDF</button>
         </div>
       </div>
+
+      <style jsx>{`
+        /* Lienzo tipo A4 en px: ~1120 de ancho para ver todo sin scroll horizontal */
+        .page {
+          display: flex;
+          justify-content: center;
+          padding: 24px 8px;
+          background: #f4f4f4;
+        }
+        .sheet {
+          width: 1120px;
+          background: #fff;
+          border: 4px solid #1f2937; /* grueso */
+          border-radius: 6px;
+          padding: 12px;
+        }
+        .full { width: 100%; border-collapse: collapse; table-layout: fixed; }
+        .mt8 { margin-top: 8px; }
+        .mt10 { margin-top: 10px; }
+
+        .cell { padding: 6px 8px; vertical-align: middle; }
+        .thick { border: 2px solid #1f2937; }       /* marco/encabezados grueso */
+        .thin  { border: 1px solid #9ca3af; }       /* celdas internas finas */
+
+        .headtxt { font-weight: 700; color: #000; }
+        .header { font-weight: 700; font-size: 14px; }
+        .left { text-align: left; }
+        .right { text-align: right; }
+        .center { text-align: center; }
+        .all-center { display: flex; align-items: center; justify-content: center; }
+
+        .logo { font-size: 64px; font-weight: 800; letter-spacing: 2px; }
+
+        .in {
+          width: 100%;
+          height: 34px;
+          box-sizing: border-box;
+          padding: 4px 8px;
+          border: 1px solid #9ca3af;
+          border-radius: 3px;
+          outline: none;
+          background: #fff;
+          font-size: 14px;
+        }
+        .in.right { text-align: right; }
+        .in.center { text-align: center; }
+
+        .btns { display: flex; gap: 12px; justify-content: flex-end; margin-top: 12px; }
+        .btn {
+          padding: 8px 14px;
+          border: 2px solid #1f2937;
+          background: #fff;
+          border-radius: 6px;
+          font-weight: 600;
+          cursor: pointer;
+        }
+        .btn:hover { background: #f7f7f7; }
+
+        @media print {
+          .page { padding: 0; background: transparent; }
+          .sheet { width: 1120px; border-width: 2px; }
+          .btns { display: none; }
+        }
+      `}</style>
     </main>
   );
 }
