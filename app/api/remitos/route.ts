@@ -1,80 +1,175 @@
-import { NextResponse } from "next/server";
-import { google } from "googleapis";
-import dayjs from "dayjs";
+import { NextRequest } from "next/server";
+import { getSheets, SPREADSHEET_ID } from "@/lib/googleSheets";
 
-export const runtime = "nodejs";
+type TalleKey = 'S'|'M'|'L'|'XL'|'XXL'|'XXXL';
+const TALLE_KEYS: TalleKey[] = ['S','M','L','XL','XXL','XXXL'];
 
-// === Tipos esperados desde tu formulario ===
-type Talles = Partial<Record<"S" | "M" | "L" | "XL" | "XXL" | "XXXL", number>>;
+// === NOMBRES EXACTOS DE TUS HOJAS ===
+const SHEET_REM   = "REMITOS";
+const SHEET_ITEMS = "REMITO ITEMS";        
+const SHEET_STOCK = "STOCK MAESTRO";
+const SHEET_OPS   = "PLANILLA DE OPERACIONES";
+const SHEET_LOG   = "LOG";                 
 
-type Item = {
-  codigo: string; // ej: "remera-dry-fit-brownie"
-  articulo: string; // nombre para planilla
-  precio: number; // precio unitario
-  cantTotal: number; // cantidad total (suma de los talles)
-  totalLinea: number; // precio * cantTotal (con descuentos si aplica)
-  talles?: Talles; // { S: 1, M: 0, ... }
+// Mapea texto de método de pago -> columna en PLANILLA DE OPERACIONES
+const metodoToColIdx: Record<string, number> = {
+  "Mercado Pago": 6,
+  "Transferencia": 7,
+  "Crédito": 8,
+  "Credito": 8,
+  "Débito": 9,
+  "Debito": 9,
+  "E-Check": 10,
+  "Efectivo": 11
 };
 
-type Remito = {
-  remitoId: string; // ej: "R-000123"
-  fecha: string; // yyyy-mm-dd
-  mayorista: boolean; // true = Mayorista, false = Minorista
-  cliente: { nombre: string; dni?: string; provincia?: string; localidad?: string };
-  vendedor: string;
-  envio: { metodo: string; costo: number };
-  pago: { metodo: string };
-  items: Item[];
-  subtotal: number;
-  descuentos?: number;
-  envioTotal?: number;
-  total: number;
-  observaciones?: string;
-  nombreHoja?: string; // columna "Nombre De La Hoja"
-};
-
-// === Cliente de Google Sheets ===
-function sheetsClient() {
-  const auth = new google.auth.GoogleAuth({
-    credentials: {
-      client_email: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
-      private_key: process.env.GOOGLE_SERVICE_ACCOUNT_KEY?.replace(/\\n/g, "\n"),
-    },
-    scopes: ["https://www.googleapis.com/auth/spreadsheets"],
-  });
-  return google.sheets({ version: "v4", auth });
-}
-
-// === Helpers ===
-const COLS_STOCK = { A_CODIGO: 0, B_S: 1, C_M: 2, D_L: 3, E_XL: 4, F_XXL: 5, G_XXXL: 6 };
-const ORDEN_TALLES: (keyof Talles)[] = ["S", "M", "L", "XL", "XXL", "XXXL"];
-
-function distribucionesPorMedioPago(metodo: Remito["pago"]["metodo"], total: number) {
-  const base = { mp: 0, transf: 0, credito: 0, debito: 0, echeck: 0, efectivo: 0 };
-  if (metodo === "Mercado Pago") base.mp = total;
-  else if (metodo === "Transferencia") base.transf = total;
-  else if (metodo === "Credito") base.credito = total;
-  else if (metodo === "Debito") base.debito = total;
-  else if (metodo === "E-Check") base.echeck = total;
-  else if (metodo === "Efectivo") base.efectivo = total;
-  return base;
-}
-
-// === Endpoint GET de prueba de conexión ===
-export async function GET() {
+export async function POST(req: NextRequest) {
   try {
-    const sheets = sheetsClient();
-    const res = await sheets.spreadsheets.get({
-      spreadsheetId: process.env.GOOGLE_SHEETS_OPERATIONS_ID!,
+    const body = await req.json();
+
+    const cab = body?.cabecera;
+    const items = body?.items || [];
+    const tot = body?.totales;
+
+    if (!cab || !Array.isArray(items) || items.length === 0)
+      return Response.json({ error: "Payload incompleto" }, { status: 400 });
+
+    const remitoId = body?.remitoId || `R${Date.now().toString(36)}`;
+    const sheets = getSheets();
+
+    // ========== REMITO (Cabecera)
+    const remRow = [[
+      remitoId,
+      cab.fecha,
+      cab.nombre,
+      cab.dni,
+      cab.provincia,
+      cab.vendedor,
+      cab.metodoPago,
+      tot.totalPrendas,
+      tot.subtotal,
+      tot.envio,
+      tot.total,
+      `Desc: ${cab.descuento} | Env: ${cab.envioMetodo} | Estado: ${cab.pagado ? "PAGADO" : "BORRADOR"}`
+    ]];
+
+    await sheets.spreadsheets.values.append({
+      spreadsheetId: SPREADSHEET_ID,
+      range: `${SHEET_REM}!A:L`,
+      valueInputOption: "USER_ENTERED",
+      requestBody: { values: remRow },
     });
 
-    return NextResponse.json({
-      ok: true,
-      message: "✅ Conectado correctamente a Google Sheets",
-      title: res.data.properties?.title,
+    // ========== ITEMS (detallado)
+    const flatItems: any[] = [];
+    for (const it of items) {
+      for (const t of TALLE_KEYS) {
+        const q = Number(it.talles?.[t] || 0);
+        if (q > 0) flatItems.push([
+          remitoId,
+          it.codigo,
+          it.articulo,
+          t,
+          q,
+          it.precio,
+          q * it.precio
+        ]);
+      }
+    }
+
+    await sheets.spreadsheets.values.append({
+      spreadsheetId: SPREADSHEET_ID,
+      range: `${SHEET_ITEMS}!A:G`,
+      valueInputOption: "USER_ENTERED",
+      requestBody: { values: flatItems },
     });
-  } catch (err: any) {
-    console.error("Error en GET /api/remitos:", err);
-    return NextResponse.json({ ok: false, error: err.message ?? String(err) }, { status: 500 });
+
+    // ========== DESCUENTO DE STOCK (estructura horizontal)
+    if (cab.pagado) {
+      const stockResp = await sheets.spreadsheets.values.get({
+        spreadsheetId: SPREADSHEET_ID,
+        range: `${SHEET_STOCK}!A:H`,
+      });
+
+      const stockVals = stockResp.data.values || [];
+      const header = stockVals[0];
+      const colMap = {
+        S: 2, M: 3, L: 4, XL: 5, XXL: 6, XXXL: 7, TOTAL: 8
+      };
+
+      // Crear un mapa de artículos
+      const index = new Map<string, number>();
+      for (let i = 1; i < stockVals.length; i++) {
+        const codigo = (stockVals[i][0] || "").trim();
+        if (codigo) index.set(codigo, i + 1); // fila real
+      }
+
+      const updates: Array<{ range: string; values: any[][] }> = [];
+      const errores: string[] = [];
+
+      for (const fi of flatItems) {
+        const [_, sku, __, talle, cantidad] = fi;
+        const row = index.get(sku);
+        if (!row) {
+          errores.push(`❌ No existe el artículo ${sku} en STOCK MAESTRO`);
+          continue;
+        }
+        const col = colMap[talle as TalleKey];
+        if (!col) continue;
+
+        const celda = `${SHEET_STOCK}!${String.fromCharCode(64 + col)}${row}`;
+        const celdaTotal = `${SHEET_STOCK}!H${row}`; // Columna H = Stock Total
+
+        // Leer valor actual
+        const valActual = Number(stockVals[row - 1][col - 1] || 0);
+        const nuevo = Math.max(valActual - cantidad, 0);
+
+        updates.push({ range: celda, values: [[nuevo]] });
+
+        // Actualizar stock total (B:G sumado)
+        const fila = stockVals[row - 1];
+        fila[col - 1] = nuevo;
+        const total = TALLE_KEYS.reduce((a, k) => a + Number(fila[colMap[k] - 1] || 0), 0);
+        updates.push({ range: celdaTotal, values: [[total]] });
+      }
+
+      if (errores.length) {
+        return Response.json({ error: "Inconsistencias", detalles: errores }, { status: 409 });
+      }
+
+      await sheets.spreadsheets.values.batchUpdate({
+        spreadsheetId: SPREADSHEET_ID,
+        requestBody: { data: updates, valueInputOption: "RAW" },
+      });
+    }
+
+    // ========== PLANILLA DE OPERACIONES
+    const filaOps = new Array(11).fill("");
+    filaOps[0] = cab.fecha;
+    filaOps[2] = tot.envio;
+    const colIdx = metodoToColIdx[cab.metodoPago] || null;
+    if (colIdx) filaOps[colIdx - 1] = tot.total;
+
+    await sheets.spreadsheets.values.append({
+      spreadsheetId: SPREADSHEET_ID,
+      range: `${SHEET_OPS}!A:K`,
+      valueInputOption: "USER_ENTERED",
+      requestBody: { values: [filaOps] },
+    });
+
+    // ========== LOG
+    await sheets.spreadsheets.values.append({
+      spreadsheetId: SPREADSHEET_ID,
+      range: `${SHEET_LOG}!A:D`,
+      valueInputOption: "USER_ENTERED",
+      requestBody: {
+        values: [[remitoId, new Date().toISOString(), cab.pagado ? "REGISTRAR_PAGO" : "BORRADOR", `items=${items.length}`]],
+      },
+    });
+
+    return Response.json({ ok: true, remitoId });
+  } catch (e: any) {
+    console.error(e);
+    return Response.json({ error: e.message || "Error interno" }, { status: 500 });
   }
 }
