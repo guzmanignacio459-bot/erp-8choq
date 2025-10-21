@@ -1,369 +1,532 @@
-"use client";
+'use client';
 
-import { useMemo, useState } from "react";
+import React, { useMemo, useState } from 'react';
+import Image from 'next/image';
+import RemitoTabs from './components/RemitoTabs'; // <-- tu ruta real
 
-type Talles = { S: string; M: string; L: string; XL: string; XXL: string; XXXL: string };
+type TalleKey = 'S' | 'M' | 'L' | 'XL' | 'XXL' | 'XXXL';
+
 type Item = {
   codigo: string;
   articulo: string;
-  aPagar: string; // precio unitario
-  talles: Talles;
+  precio: number;        // “A PAGAR” (precio unitario)
+  talles: Record<TalleKey, number>;
 };
 
-const DEFAULT_ROWS = 10;
+type Cabecera = {
+  nombre: string;
+  fecha: string;
+  dni: string;
+  vendedor: string;
+  envioMetodo: string;
+  metodoPago: string;
+  provincia: string;
+  envioCosto: number;
+  descuento: string; // etiqueta del descuento
+  pagado: boolean;
+};
 
-const emptyItem = (): Item => ({
-  codigo: "",
-  articulo: "",
-  aPagar: "",
-  talles: { S: "0", M: "0", L: "0", XL: "0", XXL: "0", XXXL: "0" },
-});
+const TALLE_KEYS: TalleKey[] = ['S', 'M', 'L', 'XL', 'XXL', 'XXXL'];
+
+function nuevaFila(): Item {
+  return {
+    codigo: '',
+    articulo: '',
+    precio: 0,
+    talles: { S: 0, M: 0, L: 0, XL: 0, XXL: 0, XXXL: 0 },
+  };
+}
 
 export default function Page() {
-  // encabezado
-  const [cliente, setCliente] = useState("");
-  const [fecha, setFecha] = useState<string>(new Date().toISOString().slice(0, 10));
-  const [dni, setDni] = useState("");
-  const [vendedor, setVendedor] = useState("");
-  const [envio, setEnvio] = useState("");
-  const [metodoPago, setMetodoPago] = useState("");
-  const [provincia, setProvincia] = useState("Mendoza");
-  const [costoEnvio, setCostoEnvio] = useState("0");
-  const [descuento, setDescuento] = useState(0);
+  // ------- ID estable del remito en esta vista -------
+  const [remitoId] = useState<string>(() => `R${Date.now().toString(36)}${Math.floor(Math.random() * 1e5).toString(36)}`);
 
-  // filas
-  const [items, setItems] = useState<Item[]>(Array.from({ length: DEFAULT_ROWS }, emptyItem));
+  // ------- Cabecera -------
+  const [cab, setCab] = useState<Cabecera>({
+    nombre: '',
+    fecha: new Date().toISOString().slice(0, 10), // yyyy-mm-dd
+    dni: '',
+    vendedor: '',
+    envioMetodo: '',
+    metodoPago: '',
+    provincia: 'Mendoza',
+    envioCosto: 0,
+    descuento: 'Sin descuento',
+    pagado: false,
+  });
 
-  const vendedores = ["Nacho", "Santi", "Paula", "Malena"];
-  const envios = ["Correo - Sucursal", "Correo - Domicilio", "Andreani - Sucursal", "Andreani - Domicilio", "OCA", "Send Box", "Retira", "Domicilio"];
-  const metodosPago = ["MP 1 cuota", "MP 3 cuotas", "Transferencia 1", "Transferencia 2", "Efectivo", "Débito", "QR"];
-  const descuentos = [
-    { label: "Sin descuento", value: 0 },
-    { label: "Mayorista 5%", value: 5 },
-    { label: "Promo 10%", value: 10 },
-    { label: "Mayorista 15%", value: 15 },
-    { label: "Promo 20%", value: 20 },
-  ];
+  // ------- Items (tabla) -------
+  const [items, setItems] = useState<Item[]>(
+    Array.from({ length: 10 }, () => nuevaFila())
+  );
 
-  const updateItem = (i: number, key: keyof Item, value: string) =>
-    setItems(prev => prev.map((r, idx) => (idx === i ? { ...r, [key]: value } : r)));
+  // ------- UI state -------
+  const [loading, setLoading] = useState(false);
 
-  const updateTalle = (i: number, talla: keyof Talles, value: string) =>
-    setItems(prev => prev.map((r, idx) => (idx === i ? { ...r, talles: { ...r.talles, [talla]: value } } : r)));
+  // ------- Handlers -------
+  const setCabField = <K extends keyof Cabecera>(k: K, v: Cabecera[K]) =>
+    setCab((c) => ({ ...c, [k]: v }));
 
-  const addRow = () => setItems(prev => [...prev, emptyItem()]);
-
-  // totales
-  const { lineQty, lineTotal, totalPrendas, subtotal, descuentoMonto, envioMonto, total } = useMemo(() => {
-    const qty: number[] = [];
-    const tot: number[] = [];
-    let prendas = 0;
-    let sub = 0;
-
-    items.forEach((it, i) => {
-      const q =
-        (parseInt(it.talles.S || "0") || 0) +
-        (parseInt(it.talles.M || "0") || 0) +
-        (parseInt(it.talles.L || "0") || 0) +
-        (parseInt(it.talles.XL || "0") || 0) +
-        (parseInt(it.talles.XXL || "0") || 0) +
-        (parseInt(it.talles.XXXL || "0") || 0);
-
-      const p = parseFloat(it.aPagar || "0") || 0;
-      const t = q * p;
-
-      qty[i] = q;
-      tot[i] = t;
-
-      prendas += q;
-      sub += t;
+  const setItemField = (row: number, field: keyof Item, value: any) =>
+    setItems((prev) => {
+      const next = [...prev];
+      (next[row] as any)[field] = value;
+      return next;
     });
 
-    const desc = (sub * descuento) / 100;
-    const env = parseFloat(costoEnvio || "0") || 0;
-    const totGeneral = sub - desc + env;
+  const setTalle = (row: number, talle: TalleKey, value: number) =>
+    setItems((prev) => {
+      const next = [...prev];
+      next[row] = {
+        ...next[row],
+        talles: { ...next[row].talles, [talle]: value },
+      };
+      return next;
+    });
 
-    return { lineQty: qty, lineTotal: tot, totalPrendas: prendas, subtotal: sub, descuentoMonto: desc, envioMonto: env, total: totGeneral };
-  }, [items, descuento, costoEnvio]);
+  const addRow = () => setItems((arr) => [...arr, nuevaFila()]);
+  const removeRow = (row: number) =>
+    setItems((arr) => arr.filter((_, i) => i !== row));
 
-  const handlePDF = async () => {
-    const node = document.getElementById("sheet");
-    if (!node) return;
-    const [jspdfMod, html2canvasMod] = await Promise.all([import("jspdf"), import("html2canvas")]);
-    const jsPDF = (jspdfMod as any).jsPDF ?? (jspdfMod as any).default;
-    const html2canvas = (html2canvasMod as any).default ?? (html2canvasMod as any);
+  // ------- Cálculos -------
+  const cantidadesPorFila = (it: Item) =>
+    TALLE_KEYS.reduce((acc, k) => acc + (Number(it.talles[k]) || 0), 0);
 
-    const canvas = await html2canvas(node, { scale: 2 });
-    const img = canvas.toDataURL("image/png");
-    const pdf = new jsPDF("p", "mm", "a4");
-    const pageW = 210;
-    const props = pdf.getImageProperties(img);
-    const h = (props.height * pageW) / props.width;
-    pdf.addImage(img, "PNG", 0, 0, pageW, h);
-    pdf.save(`Remito-${cliente || "8CHOQ"}.pdf`);
+  const totalFila = (it: Item) => cantidadesPorFila(it) * (Number(it.precio) || 0);
+
+  const totales = useMemo(() => {
+    const totalPrendas = items.reduce((acc, it) => acc + cantidadesPorFila(it), 0);
+    const subtotal = items.reduce((acc, it) => acc + totalFila(it), 0);
+
+    // Descuentos más usados (podés ajustar reglas)
+    let desc = 0;
+    if (cab.descuento === '10%') desc = subtotal * 0.1;
+    if (cab.descuento === '15%') desc = subtotal * 0.15;
+    if (cab.descuento === '20%') desc = subtotal * 0.2;
+
+    const envio = Number(cab.envioCosto) || 0;
+    const total = Math.max(subtotal - desc + envio, 0);
+
+    return { totalPrendas, subtotal, descuento: desc, envio, total };
+  }, [items, cab.descuento, cab.envioCosto]);
+
+  // ------- Acciones -------
+  const onDownloadPDF = () => {
+    window.print();
   };
 
+  const onGuardarSheets = async () => {
+    try {
+      setLoading(true);
+
+      // validación mínima útil
+      const hayFilasConCantidad = items.some((it) => cantidadesPorFila(it) > 0);
+      if (!hayFilasConCantidad) {
+        alert('⚠️ Agregá al menos una cantidad en talles.');
+        setLoading(false);
+        return;
+      }
+      if (!cab.metodoPago) {
+        // no es obligatorio para BORRADOR, pero avisa
+        console.warn('Método de pago vacío (se guarda como texto vacío en REMITOS / se no imputará en OPERACIONES).');
+      }
+
+      const payload = {
+        remitoId, // id estable en esta vista
+        cabecera: cab,
+        items: items.map((it) => ({
+          ...it,
+          cantidad: cantidadesPorFila(it),
+          total: totalFila(it),
+        })),
+        totales,
+      };
+
+      const res = await fetch('/api/remitos', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || 'Error guardando remito');
+
+      alert(`✅ Remito ${data.remitoId || remitoId} guardado${cab.pagado ? ' y stock actualizado' : ''}`);
+    } catch (err: any) {
+      console.error(err);
+      alert(`❌ No se pudo guardar: ${err.message || err}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // ------- UI -------
   return (
-    <main className="page">
-      <div id="sheet" className="sheet">
-        {/* LOGO */}
-        <table className="full">
-          <colgroup>
-            <col style={{ width: "200px" }} />
-            <col />
-          </colgroup>
-          <tbody>
-            <tr>
-              <td className="cell thick all-center" style={{ height: 76 }}>
-                <div className="logo">8CHOQ</div>
-              </td>
-              <td className="cell thick"></td>
-            </tr>
-          </tbody>
-        </table>
+    <main className="min-h-screen bg-neutral-100 pb-24">
+      {/* Tabs de remitos */}
+      <RemitoTabs />
 
-        {/* CABECERA */}
-        <table className="full mt8">
-          <colgroup>
-            <col style={{ width: "170px" }} />
-            <col style={{ width: "370px" }} />
-            <col style={{ width: "170px" }} />
-            <col style={{ width: "370px" }} />
-          </colgroup>
-          <tbody>
-            <tr>
-              <td className="cell thick header">NOMBRE</td>
-              <td className="cell thick">
-                <input className="in" value={cliente} onChange={e => setCliente(e.target.value)} placeholder="Cliente" />
-              </td>
-              <td className="cell thick header">ENVÍO</td>
-              <td className="cell thick">
-                <select className="in" value={envio} onChange={e => setEnvio(e.target.value)}>
-                  <option value="">Seleccionar...</option>
-                  {envios.map(v => (
-                    <option key={v} value={v}>
-                      {v}
-                    </option>
-                  ))}
-                </select>
-              </td>
-            </tr>
+      {/* Hoja (lienzo) */}
+      <div className="max-w-[1220px] mx-auto p-4">
+        <div className="bg-white border-4 border-neutral-700 rounded-md shadow-md print:shadow-none">
+          {/* Header con logo + banda superior */}
+          <div className="border-b-4 border-neutral-700 p-4 relative h-[80px]">
+            <div className="absolute left-6 top-1/2 -translate-y-1/2">
+              <Image
+                src="/logo-8choq.png"
+                alt="8CHOQ"
+                width={140}
+                height={48}
+                className="object-contain"
+                priority
+              />
+            </div>
 
-            <tr>
-              <td className="cell thick header">FECHA</td>
-              <td className="cell thick">
-                <input type="date" className="in" value={fecha} onChange={e => setFecha(e.target.value)} />
-              </td>
-              <td className="cell thick header">MÉTODO DE PAGO</td>
-              <td className="cell thick">
-                <select className="in" value={metodoPago} onChange={e => setMetodoPago(e.target.value)}>
-                  <option value="">Seleccionar...</option>
-                  {metodosPago.map(v => (
-                    <option key={v} value={v}>
-                      {v}
-                    </option>
-                  ))}
-                </select>
-              </td>
-            </tr>
+            <div className="absolute right-6 top-1/2 -translate-y-1/2 flex items-center gap-4">
+              <span className="text-xs text-neutral-500">ID: {remitoId}</span>
+              <label className="inline-flex items-center gap-2 select-none">
+                <span className="text-sm font-medium">Pagado</span>
+                <button
+                  type="button"
+                  onClick={() => setCabField('pagado', !cab.pagado)}
+                  className={`w-11 h-6 rounded-full transition-colors ${
+                    cab.pagado ? 'bg-emerald-500' : 'bg-neutral-300'
+                  }`}
+                >
+                  <span
+                    className={`block w-5 h-5 bg-white rounded-full shadow transform transition-transform ${
+                      cab.pagado ? 'translate-x-6' : 'translate-x-1'
+                    }`}
+                  />
+                </button>
+              </label>
+            </div>
+          </div>
 
-            <tr>
-              <td className="cell thick header">DNI</td>
-              <td className="cell thick">
-                <input className="in" value={dni} onChange={e => setDni(e.target.value)} placeholder="DNI" />
-              </td>
-              <td className="cell thick header">PROVINCIA / LOCALIDAD</td>
-              <td className="cell thick">
-                <input className="in" value={provincia} onChange={e => setProvincia(e.target.value)} />
-              </td>
-            </tr>
+          {/* Cabecera */}
+          <section className="grid grid-cols-12 gap-0 border-b-4 border-neutral-700">
+            {/* 1ª fila */}
+            <Cell label="NOMBRE" className="col-span-2" />
+            <div className="col-span-4 border border-neutral-700 p-2">
+              <input
+                value={cab.nombre}
+                onChange={(e) => setCabField('nombre', e.target.value)}
+                className="w-full outline-none"
+                placeholder="Cliente"
+              />
+            </div>
+            <Cell label="ENVÍO" className="col-span-2" />
+            <div className="col-span-4 border border-neutral-700 p-2">
+              <select
+                value={cab.envioMetodo}
+                onChange={(e) => setCabField('envioMetodo', e.target.value)}
+                className="w-full outline-none bg-white"
+              >
+                <option value="">Seleccionar...</option>
+                <option>Andreani</option>
+                <option>Encomienda</option>
+                <option>Retiro en local</option>
+                <option>Motomensajería</option>
+              </select>
+            </div>
 
-            <tr>
-              <td className="cell thick header">VENDEDOR</td>
-              <td className="cell thick">
-                <select className="in" value={vendedor} onChange={e => setVendedor(e.target.value)}>
-                  <option value="">Seleccionar...</option>
-                  {vendedores.map(v => (
-                    <option key={v} value={v}>
-                      {v}
-                    </option>
-                  ))}
-                </select>
-              </td>
-              <td className="cell thick header">COSTO DE ENVÍO ($)</td>
-              <td className="cell thick">
-                <input className="in right" value={costoEnvio} onChange={e => setCostoEnvio(e.target.value)} inputMode="decimal" />
-              </td>
-            </tr>
+            {/* 2ª fila */}
+            <Cell label="FECHA" className="col-span-2" />
+            <div className="col-span-4 border border-neutral-700 p-2">
+              <input
+                type="date"
+                value={cab.fecha}
+                onChange={(e) => setCabField('fecha', e.target.value)}
+                className="w-full outline-none"
+              />
+            </div>
+            <Cell label="MÉTODO DE PAGO" className="col-span-2" />
+            <div className="col-span-4 border border-neutral-700 p-2">
+              <select
+                value={cab.metodoPago}
+                onChange={(e) => setCabField('metodoPago', e.target.value)}
+                className="w-full outline-none bg-white"
+              >
+                <option value="">Seleccionar...</option>
+                <option>Mercado Pago</option>
+                <option>Transferencia</option>
+                <option>Crédito</option>
+                <option>Débito</option>
+                <option>E-Check</option>
+                <option>Efectivo</option>
+              </select>
+            </div>
 
-            <tr>
-              <td className="cell thick header">DESCUENTO</td>
-              <td className="cell thick">
-                <select className="in" value={descuento} onChange={e => setDescuento(parseInt(e.target.value))}>
-                  {descuentos.map(d => (
-                    <option key={d.value} value={d.value}>
-                      {d.label}
-                    </option>
-                  ))}
-                </select>
-              </td>
-              <td className="cell thick" />
-              <td className="cell thick" />
-            </tr>
-          </tbody>
-        </table>
+            {/* 3ª fila */}
+            <Cell label="DNI" className="col-span-2" />
+            <div className="col-span-4 border border-neutral-700 p-2">
+              <input
+                value={cab.dni}
+                onChange={(e) => setCabField('dni', e.target.value)}
+                className="w-full outline-none"
+                placeholder="DNI"
+              />
+            </div>
+            <Cell label="PROVINCIA / LOCALIDAD" className="col-span-2" />
+            <div className="col-span-4 border border-neutral-700 p-2">
+              <input
+                value={cab.provincia}
+                onChange={(e) => setCabField('provincia', e.target.value)}
+                className="w-full outline-none"
+                placeholder="Provincia/Localidad"
+              />
+            </div>
 
-        {/* CUERPO (medidas fijas para replicar la planilla) */}
-        <table className="full mt10">
-          <colgroup>
-            <col style={{ width: "120px" }} />   {/* CODIGO */}
-            <col style={{ width: "280px" }} />   {/* ARTICULO */}
-            <col style={{ width: "110px" }} />   {/* A PAGAR */}
-            <col style={{ width: "60px" }} />    {/* S */}
-            <col style={{ width: "60px" }} />    {/* M */}
-            <col style={{ width: "60px" }} />    {/* L */}
-            <col style={{ width: "60px" }} />    {/* XL */}
-            <col style={{ width: "60px" }} />    {/* XXL */}
-            <col style={{ width: "60px" }} />    {/* XXXL */}
-            <col style={{ width: "100px" }} />   {/* CANT */}
-            <col style={{ width: "120px" }} />   {/* TOTAL */}
-          </colgroup>
-          <thead>
-            <tr>
-              <th className="cell thick headtxt left">CÓDIGO</th>
-              <th className="cell thick headtxt left">ARTÍCULO</th>
-              <th className="cell thick headtxt left">A PAGAR</th>
-              <th className="cell thick headtxt">S</th>
-              <th className="cell thick headtxt">M</th>
-              <th className="cell thick headtxt">L</th>
-              <th className="cell thick headtxt">XL</th>
-              <th className="cell thick headtxt">XXL</th>
-              <th className="cell thick headtxt">XXXL</th>
-              <th className="cell thick headtxt">CANTIDAD</th>
-              <th className="cell thick headtxt right">TOTAL</th>
-            </tr>
-          </thead>
-          <tbody>
-            {items.map((it, i) => (
-              <tr key={i}>
-                <td className="cell thin">
-                  <input className="in" placeholder="Código" value={it.codigo} onChange={e => updateItem(i, "codigo", e.target.value)} />
-                </td>
-                <td className="cell thin">
-                  <input className="in" placeholder="Artículo" value={it.articulo} onChange={e => updateItem(i, "articulo", e.target.value)} />
-                </td>
-                <td className="cell thin">
-                  <input className="in right" placeholder="0" value={it.aPagar} onChange={e => updateItem(i, "aPagar", e.target.value)} inputMode="decimal" />
-                </td>
-                {(["S", "M", "L", "XL", "XXL", "XXXL"] as const).map(t => (
-                  <td key={t} className="cell thin center">
-                    <input className="in center" value={it.talles[t]} onChange={e => updateTalle(i, t, e.target.value)} inputMode="numeric" />
-                  </td>
-                ))}
-                <td className="cell thin center">{lineQty[i] ?? 0}</td>
-                <td className="cell thin right">${(lineTotal[i] ?? 0).toFixed(2)}</td>
-              </tr>
-            ))}
-          </tbody>
-          <tfoot>
-            <tr>
-              <td className="cell thick" colSpan={9} />
-              <td className="cell thick headtxt center">TOTAL PRENDAS</td>
-              <td className="cell thick right">{totalPrendas}</td>
-            </tr>
-            <tr>
-              <td className="cell thick" colSpan={9} />
-              <td className="cell thin headtxt right">SUBTOTAL</td>
-              <td className="cell thin right">${subtotal.toFixed(2)}</td>
-            </tr>
-            <tr>
-              <td className="cell thick" colSpan={9} />
-              <td className="cell thin headtxt right">DESCUENTO {descuento ? `(${descuento}%)` : ""}</td>
-              <td className="cell thin right">-${descuentoMonto.toFixed(2)}</td>
-            </tr>
-            <tr>
-              <td className="cell thick" colSpan={9} />
-              <td className="cell thin headtxt right">ENVÍO</td>
-              <td className="cell thin right">${envioMonto.toFixed(2)}</td>
-            </tr>
-            <tr>
-              <td className="cell thick" colSpan={9} />
-              <td className="cell thick headtxt right">TOTAL</td>
-              <td className="cell thick right">${total.toFixed(2)}</td>
-            </tr>
-          </tfoot>
-        </table>
+            {/* 4ª fila */}
+            <Cell label="VENDEDOR" className="col-span-2" />
+            <div className="col-span-4 border border-neutral-700 p-2">
+              <select
+                value={cab.vendedor}
+                onChange={(e) => setCabField('vendedor', e.target.value)}
+                className="w-full outline-none bg-white"
+              >
+                <option value="">Seleccionar...</option>
+                <option>Nacho</option>
+                <option>Equipo</option>
+              </select>
+            </div>
+            <Cell label="COSTO DE ENVÍO ($)" className="col-span-2" />
+            <div className="col-span-4 border border-neutral-700 p-2">
+              <input
+                type="number"
+                value={cab.envioCosto}
+                onChange={(e) => setCabField('envioCosto', Number(e.target.value))}
+                className="w-full outline-none"
+                placeholder="0"
+                min={0}
+              />
+            </div>
 
-        {/* botones */}
-        <div className="btns">
-          <button className="btn" onClick={addRow}>+ Agregar fila</button>
-          <button className="btn" onClick={handlePDF}>Descargar PDF</button>
+            {/* 5ª fila */}
+            <Cell label="DESCUENTO" className="col-span-2" />
+            <div className="col-span-10 border border-neutral-700 p-2">
+              <select
+                value={cab.descuento}
+                onChange={(e) => setCabField('descuento', e.target.value)}
+                className="w-full outline-none bg-white max-w-[260px]"
+              >
+                <option>Sin descuento</option>
+                <option>10%</option>
+                <option>15%</option>
+                <option>20%</option>
+              </select>
+            </div>
+          </section>
+
+          {/* Tabla de ítems */}
+          <section>
+            {/* Header tabla */}
+            <div className="grid grid-cols-[130px,1fr,120px,repeat(6,80px),120px,140px] text-sm font-bold text-neutral-800 border-b-2 border-neutral-700">
+              <Th>CÓDIGO</Th>
+              <Th>ARTÍCULO</Th>
+              <Th>A PAGAR</Th>
+              {TALLE_KEYS.map((t) => (
+                <Th key={t}>{t}</Th>
+              ))}
+              <Th>CANTIDAD</Th>
+              <Th>TOTAL</Th>
+            </div>
+
+            {/* Filas */}
+            <div className="divide-y-2 divide-neutral-200 border-b-4 border-neutral-700">
+              {items.map((it, idx) => {
+                const cantidad = cantidadesPorFila(it);
+                const total = totalFila(it);
+                return (
+                  <div
+                    key={idx}
+                    className="grid grid-cols-[130px,1fr,120px,repeat(6,80px),120px,140px] text-sm"
+                  >
+                    {/* Código */}
+                    <Td>
+                      <input
+                        value={it.codigo}
+                        onChange={(e) => setItemField(idx, 'codigo', e.target.value)}
+                        className="w-full outline-none text-neutral-900"
+                        placeholder="Código"
+                      />
+                    </Td>
+
+                    {/* Artículo */}
+                    <Td>
+                      <input
+                        value={it.articulo}
+                        onChange={(e) => setItemField(idx, 'articulo', e.target.value)}
+                        className="w-full outline-none text-neutral-900"
+                        placeholder="Artículo"
+                      />
+                    </Td>
+
+                    {/* Precio */}
+                    <Td>
+                      <input
+                        type="number"
+                        value={it.precio}
+                        onChange={(e) =>
+                          setItemField(idx, 'precio', Number(e.target.value))
+                        }
+                        className="w-full outline-none"
+                        min={0}
+                      />
+                    </Td>
+
+                    {/* Talles */}
+                    {TALLE_KEYS.map((t) => (
+                      <Td key={t}>
+                        <input
+                          type="number"
+                          value={it.talles[t]}
+                          onChange={(e) =>
+                            setTalle(idx, t, Number(e.target.value || 0))
+                          }
+                          className="w-full outline-none text-center"
+                          min={0}
+                        />
+                      </Td>
+                    ))}
+
+                    {/* Cantidad */}
+                    <Td className="text-center font-medium">{cantidad}</Td>
+
+                    {/* Total */}
+                    <Td className="text-right font-medium">
+                      {currency(total)}
+                    </Td>
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+
+          {/* Totales + Observaciones */}
+          <section className="grid grid-cols-12 gap-0">
+            {/* Observaciones (libre) */}
+            <div className="col-span-8 border-r-4 border-neutral-700 p-6 min-h-[120px]"></div>
+
+            {/* Totales */}
+            <div className="col-span-4 text-sm">
+              <RowTotal label="TOTAL PRENDAS" value={totales.totalPrendas} />
+              <RowTotal label="SUBTOTAL" value={currency(totales.subtotal)} />
+              <RowTotal
+                label="DESCUENTO"
+                value={`-${currency(totales.descuento)}`}
+              />
+              <RowTotal label="ENVÍO" value={currency(totales.envio)} />
+              <RowTotal
+                label="TOTAL"
+                value={currency(totales.total)}
+                strong
+                big
+              />
+            </div>
+          </section>
+
+          {/* Acciones */}
+          <div className="flex items-center justify-end gap-3 p-4">
+            <button
+              onClick={addRow}
+              className="px-4 py-2 rounded-md border border-neutral-300 bg-white hover:bg-neutral-50 active:scale-[.99]"
+              disabled={loading}
+            >
+              + Agregar fila
+            </button>
+
+            <button
+              onClick={onDownloadPDF}
+              className="px-4 py-2 rounded-md border border-neutral-300 bg-white hover:bg-neutral-50"
+              disabled={loading}
+            >
+              Descargar PDF
+            </button>
+
+            <button
+              onClick={onGuardarSheets}
+              className="px-4 py-2 rounded-md bg-neutral-900 text-white hover:bg-black disabled:opacity-60"
+              disabled={loading}
+            >
+              {loading ? 'Guardando...' : 'Guardar en Sheets'}
+            </button>
+          </div>
         </div>
       </div>
-
-      <style jsx>{`
-        /* Lienzo tipo A4 en px: ~1120 de ancho para ver todo sin scroll horizontal */
-        .page {
-          display: flex;
-          justify-content: center;
-          padding: 24px 8px;
-          background: #f4f4f4;
-        }
-        .sheet {
-          width: 1120px;
-          background: #fff;
-          border: 4px solid #1f2937; /* grueso */
-          border-radius: 6px;
-          padding: 12px;
-        }
-        .full { width: 100%; border-collapse: collapse; table-layout: fixed; }
-        .mt8 { margin-top: 8px; }
-        .mt10 { margin-top: 10px; }
-
-        .cell { padding: 6px 8px; vertical-align: middle; }
-        .thick { border: 2px solid #1f2937; }       /* marco/encabezados grueso */
-        .thin  { border: 1px solid #9ca3af; }       /* celdas internas finas */
-
-        .headtxt { font-weight: 700; color: #000; }
-        .header { font-weight: 700; font-size: 14px; }
-        .left { text-align: left; }
-        .right { text-align: right; }
-        .center { text-align: center; }
-        .all-center { display: flex; align-items: center; justify-content: center; }
-
-        .logo { font-size: 64px; font-weight: 800; letter-spacing: 2px; }
-
-        .in {
-          width: 100%;
-          height: 34px;
-          box-sizing: border-box;
-          padding: 4px 8px;
-          border: 1px solid #9ca3af;
-          border-radius: 3px;
-          outline: none;
-          background: #fff;
-          font-size: 14px;
-        }
-        .in.right { text-align: right; }
-        .in.center { text-align: center; }
-
-        .btns { display: flex; gap: 12px; justify-content: flex-end; margin-top: 12px; }
-        .btn {
-          padding: 8px 14px;
-          border: 2px solid #1f2937;
-          background: #fff;
-          border-radius: 6px;
-          font-weight: 600;
-          cursor: pointer;
-        }
-        .btn:hover { background: #f7f7f7; }
-
-        @media print {
-          .page { padding: 0; background: transparent; }
-          .sheet { width: 1120px; border-width: 2px; }
-          .btns { display: none; }
-        }
-      `}</style>
     </main>
   );
+}
+
+/* =======================
+   Helpers UI
+   ======================= */
+
+function Cell({
+  label,
+  className,
+}: {
+  label: string;
+  className?: string;
+}) {
+  return (
+    <div
+      className={`border border-neutral-700 px-3 py-2 bg-neutral-100 text-[13px] font-semibold ${className || ''
+        }`}
+    >
+      {label}
+    </div>
+  );
+}
+
+function Th({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="border-r border-neutral-700 px-2 py-2 bg-neutral-100 text-center">
+      {children}
+    </div>
+  );
+}
+
+function Td({
+  children,
+  className,
+}: {
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <div className={`border-r border-neutral-200 px-2 py-2 ${className || ''}`}>
+      {children}
+    </div>
+  );
+}
+
+function RowTotal({
+  label,
+  value,
+  strong,
+  big,
+}: {
+  label: string;
+  value: string | number;
+  strong?: boolean;
+  big?: boolean;
+}) {
+  return (
+    <div className="grid grid-cols-2">
+      <div className="border-t border-neutral-300 px-3 py-2 text-right font-semibold">
+        {label}
+      </div>
+      <div
+        className={`border-t border-neutral-300 px-3 py-2 text-right ${strong ? 'font-bold' : ''
+          } ${big ? 'text-base' : ''}`}
+      >
+        {value}
+      </div>
+    </div>
+  );
+}
+
+function currency(n: number) {
+  return n.toLocaleString('es-AR', { style: 'currency', currency: 'ARS' });
 }
