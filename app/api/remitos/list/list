@@ -1,16 +1,17 @@
+// Requiere Node runtime en Vercel/Next
 export const runtime = 'nodejs';
 
 import { NextResponse } from "next/server";
 import { getSheets, SPREADSHEET_ID } from "@/lib/googleSheets";
 
+// Devuelve el listado de remitos desde la hoja "REMITOS"
 export async function GET() {
   try {
     const sheets = getSheets();
     const sheet = "REMITOS"; // pestaña
-
     const res = await sheets.spreadsheets.values.get({
       spreadsheetId: SPREADSHEET_ID,
-      range: `${sheet}!A:L`, // ID, Fecha, Nombre, DNI, Prov/Loc, Vendedor, Método, TotalPrendas, Subtotal, Envío, Total, Descuento/Pagado
+      range: `${sheet}!A:L`, // columnas que tengas en tu hoja
     });
 
     const rows = res.data.values ?? [];

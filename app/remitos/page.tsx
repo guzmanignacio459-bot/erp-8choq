@@ -2,6 +2,8 @@
 
 import { useEffect, useMemo, useState } from "react";
 
+import RemitoTabs from "../components/RemitoTabs";
+
 type Remito = Record<string, string>;
 
 export default function RemitosPage() {
@@ -30,6 +32,9 @@ export default function RemitosPage() {
 
   return (
     <main className="max-w-[1220px] mx-auto p-4">
+    <>
+      <RemitoTabs />
+      <main className="max-w-[1220px] mx-auto p-4">
       <h1 className="text-2xl font-bold mb-4">Listado de Remitos</h1>
 
       <input
@@ -66,5 +71,7 @@ export default function RemitosPage() {
         </table>
       </div>
     </main>
+      </main>
+    </>
   );
 }
