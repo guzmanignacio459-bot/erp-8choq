@@ -1,29 +1,53 @@
-export const runtime = 'nodejs';
-
+// app/api/remitos/route.ts
 import { NextResponse } from "next/server";
-import { getSheets, SPREADSHEET_ID } from "@/lib/googleSheets";
 
-export async function GET() {
+const APPS = process.env.APPS_SCRIPT_URL;
+
+export async function POST(req: Request) {
   try {
-    const sheets = getSheets();
-    const sheet = "REMITOS"; // pestaña
+    const body = await req.json(); // { action, ... }
+    if (!APPS) throw new Error("APPS_SCRIPT_URL no configurada");
 
-    const res = await sheets.spreadsheets.values.get({
-      spreadsheetId: SPREADSHEET_ID,
-      range: `${sheet}!A:L`, // ID, Fecha, Nombre, DNI, Prov/Loc, Vendedor, Método, TotalPrendas, Subtotal, Envío, Total, Descuento/Pagado
+    const res = await fetch(APPS, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      cache: "no-store",
     });
 
-    const rows = res.data.values ?? [];
-    const headers = rows[0] ?? [];
-    const data = rows.slice(1).map((r) => {
-      const obj: Record<string, string> = {};
-      headers.forEach((h: string, i: number) => (obj[h] = r[i] ?? ""));
-      return obj;
-    });
+    const text = await res.text();
+    let data: any;
+    try {
+      data = JSON.parse(text);
+    } catch {
+      data = { ok: false, error: text.slice(0, 300) };
+    }
 
-    return NextResponse.json({ remitos: data });
+    if (!res.ok || data?.ok === false) {
+      return NextResponse.json(
+        { ok: false, error: data?.error || `Apps Script ${res.status}` },
+        { status: 500 }
+      );
+    }
+
+    return NextResponse.json(data);
   } catch (e: any) {
-    console.error(e);
-    return NextResponse.json({ error: e.message }, { status: 500 });
+    return NextResponse.json(
+      { ok: false, error: String(e?.message ?? e) },
+      { status: 500 }
+    );
   }
+}
+
+// Azúcar para listar rápido /api/remitos?action=listRemitos
+export async function GET(req: Request) {
+  const { searchParams } = new URL(req.url);
+  const action = searchParams.get("action") || "listRemitos";
+  return POST(
+    new Request(req.url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action }),
+    })
+  );
 }

@@ -1,180 +1,108 @@
+// app/api/remitos/save/route.ts
 import { NextResponse } from "next/server";
 
-import { getSheets, SPREADSHEET_ID } from "@/lib/googleSheets";
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
-type RemitoItem = {
-  codigo?: string;
-  articulo?: string;
-  precio?: number;
-  cantTotal?: number;
-  totalLinea?: number;
-  talles?: Record<string, number>;
-};
+const GS_URL =
+  (process.env.NEXT_PUBLIC_GS_URL ??
+    process.env.NEXT_PUBLIC_REMITOS_WEBHOOK_URL ??
+    process.env.APPS_SCRIPT_URL ??
+    "").trim();
+const TOKEN = (process.env.APPS_SCRIPT_TOKEN ?? "").trim();
 
-type RemitoPayload = {
-  remitoId: string;
-  fecha?: string;
-  mayorista?: boolean;
-  cliente?: {
-    nombre?: string;
-    dni?: string;
-    provincia?: string;
-    localidad?: string;
-  };
-  vendedor?: string;
-  pago?: { metodo?: string };
-  items: RemitoItem[];
-  subtotal?: number;
-  descuentos?: number;
-  envioTotal?: number;
-  total?: number;
-  observaciones?: string;
-  nombreHoja?: string;
-  pagado?: boolean;
-};
-
-const REMITOS_RANGE = "REMITOS!A:L";
-const OPERACIONES_RANGE = "Planilla de Operaciones!A:E";
-
-function safeNumber(value: unknown, fallback = 0) {
-  if (typeof value === "number" && Number.isFinite(value)) return value;
-  if (typeof value === "string" && value.trim()) {
-    const normalized = value.replace(/,/g, ".");
-    const parsed = Number(normalized);
-    if (Number.isFinite(parsed)) return parsed;
-  }
-  return fallback;
+function json(body: any, status = 200) {
+  return new NextResponse(JSON.stringify(body), {
+    status,
+    headers: {
+      "Content-Type": "application/json; charset=utf-8",
+      "Cache-Control": "no-store",
+    },
+  });
 }
 
-function sumPrendas(items: RemitoItem[]) {
-  return items.reduce((acc, item) => acc + safeNumber(item.cantTotal), 0);
-}
-
-function sanitizeRemito(remito: RemitoPayload) {
-  const items = remito.items || [];
-  const subtotal = remito.subtotal ?? items.reduce((acc, item) => acc + safeNumber(item.totalLinea), 0);
-  const descuentos = safeNumber(remito.descuentos);
-  const envioTotal = safeNumber(remito.envioTotal);
-  const total = remito.total ?? subtotal - descuentos + envioTotal;
-
-  return {
-    ...remito,
-    subtotal,
-    descuentos,
-    envioTotal,
-    total,
-    items,
-  };
-}
-
-function buildRemitoRow(remito: ReturnType<typeof sanitizeRemito>) {
-  const { cliente } = remito;
-  const provincia = cliente?.provincia ?? "";
-  const localidad = cliente?.localidad ?? "";
-  const localidadProvincia = [provincia, localidad].filter(Boolean).join(" / ");
-
-  return [
-    remito.remitoId,
-    remito.fecha ?? "",
-    cliente?.nombre ?? "",
-    cliente?.dni ?? "",
-    localidadProvincia,
-    remito.vendedor ?? "",
-    remito.pago?.metodo ?? "",
-    sumPrendas(remito.items),
-    remito.subtotal,
-    remito.envioTotal,
-    remito.total,
-    remito.descuentos,
-  ];
-}
-
-function normalizeMethod(method?: string) {
-  if (!method) return "";
-  const noAccents = method.normalize("NFD").replace(/\p{Diacritic}/gu, "");
-  return noAccents.replace(/[^a-zA-Z0-9]/g, "_").replace(/_+/g, "_").toUpperCase();
-}
-
-function getFeeForMethod(method?: string) {
-  const normalized = normalizeMethod(method);
-  if (!normalized) return 0;
-  const envKey = `OPS_FEE_${normalized}`;
-  const raw = process.env[envKey];
-  if (!raw) return 0;
-  const parsed = safeNumber(raw, 0);
-  return parsed;
-}
-
-function buildOperacionRow(remito: ReturnType<typeof sanitizeRemito>) {
-  const bruto = safeNumber(remito.total);
-  const fee = getFeeForMethod(remito.pago?.metodo);
-  const retencion = Number(((bruto * fee) / 100).toFixed(2));
-  const neto = Number((bruto - retencion).toFixed(2));
-
-  return {
-    bruto,
-    retencion,
-    neto,
-    metodo: remito.pago?.metodo ?? "",
-    vendedor: remito.vendedor ?? "",
-  };
-}
-
-export async function POST(request: Request) {
+/**
+ * Proxy hacia Google Apps Script (acción: saveRemito)
+ * Espera body con estructura:
+ * {
+ *   data: {
+ *     fechaISO, nombre, dni, localidad, telefono,
+ *     transporte, metodoPago, vendedor, condicionCompra, estado,
+ *     recargoDescuento, detalleGeneral, envio,
+ *     items: [{ sku, articulo, talle, cantidad, precioUnitario }]
+ *   }
+ * }
+ */
+export async function POST(req: Request) {
   try {
-    const body = await request.json();
-    const remitoInput = body?.remito as RemitoPayload | undefined;
+    const body = await req.json().catch(() => null);
+    if (!body) return json({ ok: false, error: "Body vacío o inválido" }, 400);
 
-    if (!remitoInput?.remitoId) {
-      return NextResponse.json(
-        { error: "Remito inválido" },
-        { status: 400 }
+    const data = body?.data ? body.data : body;
+    if (!data || typeof data !== "object") {
+      return json({ ok: false, error: "Falta objeto 'data' válido" }, 400);
+    }
+
+    if (!GS_URL)
+      return json({ ok: false, error: "Falta configurar GS_URL/APPS_SCRIPT_URL" }, 500);
+
+    try {
+      new URL(GS_URL);
+    } catch {
+      return json({ ok: false, error: "APPS_SCRIPT_URL inválida" }, 500);
+    }
+
+    // Timeout de seguridad (12 segundos)
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 12_000);
+
+    const payload = {
+      action: "saveRemito",
+      token: TOKEN,
+      data,
+    };
+
+    const resp = await fetch(GS_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      cache: "no-store",
+      signal: controller.signal,
+      body: JSON.stringify(payload),
+    }).catch((e) => {
+      throw new Error(`Error al enviar a Apps Script: ${e?.message || e}`);
+    });
+
+    clearTimeout(timeout);
+
+    if (!resp.ok) {
+      const text = await resp.text().catch(() => "");
+      return json(
+        { ok: false, error: `Apps Script ${resp.status}: ${text?.slice(0, 200)}` },
+        502
       );
     }
 
-    const remito = sanitizeRemito(remitoInput);
-
-    const sheets = getSheets();
-
-    await sheets.spreadsheets.values.append({
-      spreadsheetId: SPREADSHEET_ID,
-      range: REMITOS_RANGE,
-      valueInputOption: "USER_ENTERED",
-      requestBody: {
-        values: [buildRemitoRow(remito)],
-      },
-    });
-
-    const operacion = buildOperacionRow(remito);
-    let operationsSaved = false;
-
-    if (operacion.bruto || operacion.metodo || operacion.vendedor) {
-      try {
-        await sheets.spreadsheets.values.append({
-          spreadsheetId: SPREADSHEET_ID,
-          range: OPERACIONES_RANGE,
-          valueInputOption: "USER_ENTERED",
-          requestBody: {
-            values: [[
-              operacion.bruto,
-              operacion.retencion,
-              operacion.neto,
-              operacion.metodo,
-              operacion.vendedor,
-            ]],
-          },
-        });
-        operationsSaved = true;
-      } catch (opsError) {
-        console.error("No se pudo guardar Planilla de Operaciones", opsError);
-      }
+    const result = await resp.json().catch(() => null);
+    if (!result || !result.ok) {
+      return json(
+        { ok: false, error: String(result?.error || "Respuesta inválida de Apps Script") },
+        502
+      );
     }
 
-    return NextResponse.json({ ok: true, operationsSaved, operacion });
-  } catch (error: unknown) {
-    console.error("Error guardando remito", error);
-    const message =
-      error instanceof Error ? error.message : "Error guardando remito";
-    return NextResponse.json({ error: message }, { status: 500 });
+    return json(
+      {
+        ok: true,
+        id: result.id ?? null,
+        message: result.message ?? "Remito guardado correctamente",
+      },
+      200
+    );
+  } catch (err: any) {
+    const msg =
+      err?.name === "AbortError"
+        ? "Timeout consultando Apps Script"
+        : String(err?.message || err);
+    return json({ ok: false, error: msg }, 500);
   }
 }
