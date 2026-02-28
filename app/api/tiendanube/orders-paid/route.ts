@@ -5,26 +5,10 @@ import { getSheets, SPREADSHEET_ID } from "@/lib/googleSheets";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-/**
- * Webhook "orders paid" -> crea Remito en tu ERP (Apps Script)
- *
- * Requiere env:
- * - APPS_SCRIPT_URL
- * - APPS_SCRIPT_TOKEN (si tu GAS lo valida)
- *
- * Reglas de negocio (alineadas al importador):
- * - Exportar TODAS las órdenes pagadas, tengan o no SKUs "-SCNL"
- * - 1 prenda = 1 fila (expand qty)
- * - Owner por SKU:
- *   - sku termina en "-SCNL" => owner = "SCNL"
- *   - caso contrario         => owner = ""   (vacío)
- * - Anti-duplicado por "Detalle general" conteniendo "TN_ORDER_ID=<id>"
- */
-
 const GS_URL = (process.env.APPS_SCRIPT_URL ?? "").trim();
 const GS_TOKEN = (process.env.APPS_SCRIPT_TOKEN ?? "").trim();
 
-// Cache (evita pegarle a la fila 1 en cada webhook)
+// Cache columna "Detalle general"
 let _detalleGeneralIdxPromise: Promise<number> | null = null;
 
 function json(body: any, status = 200) {
@@ -40,22 +24,79 @@ function json(body: any, status = 200) {
 function safeString(v: any) {
   return String(v ?? "").trim();
 }
-
 function safeNumber(v: any) {
   const n = Number(v);
   return Number.isFinite(n) ? n : 0;
 }
-
 function normalizeMoney(v: any): number {
   if (v == null) return 0;
   if (typeof v === "number") return Number.isFinite(v) ? v : 0;
   if (typeof v === "string") {
-    // tolerante: "23.490,00" -> "23490.00"
     const s = v.replace(/\./g, "").replace(",", ".");
     const n = Number(s);
     return Number.isFinite(n) ? n : 0;
   }
   return 0;
+}
+function getMetodoPagoVal(order: any): string {
+  // 1) intenta encontrar cuotas
+  const installments =
+    Number(order?.payment_details?.installments ?? order?.installments ?? order?.payments?.[0]?.installments ?? 0) || 0;
+
+  // 2) intenta detectar “tipo” (crédito/débito/transfer)
+  const raw =
+    String(
+      order?.payment_details?.method ||
+      order?.payment_details?.payment_method ||
+      order?.payment_details?.payment_type ||
+      order?.payment_method ||
+      order?.gateway ||
+      order?.payment_gateway ||
+      order?.payments?.[0]?.gateway ||
+      order?.payments?.[0]?.payment_method ||
+      order?.payment_details?.name ||
+      order?.payment_method_name ||
+      order?.payment_method_id ||
+      ""
+    ).toLowerCase().trim();
+
+  // 3) normalización transferencia / custom
+  if (raw.includes("transfer") || raw.includes("bank") || raw.includes("cbu") || raw.includes("alias")) {
+    return "TRANSFERENCIA";
+  }
+  if (raw === "custom") {
+    // muchas tiendas usan custom para transferencia/efectivo: si querés, acá podés afinar
+    return "CUSTOM";
+  }
+
+  // 4) mercado pago / tiendanube payments / tarjeta
+  const isMP = raw.includes("mercado") || raw.includes("mp");
+  const isCard = raw.includes("card") || raw.includes("tarjeta") || raw.includes("credit") || raw.includes("debit");
+
+  const isDebit = raw.includes("debit") || raw.includes("debito");
+  const isCredit = raw.includes("credit") || raw.includes("credito");
+
+  if (isMP) {
+    if (isDebit) return "MP - DÉBITO";
+    if (isCredit) return installments > 1 ? `MP - CRÉDITO ${installments} CUOTAS` : "MP - CRÉDITO 1 CUOTA";
+    // fallback MP
+    return installments > 1 ? `MP - ${installments} CUOTAS` : "MP";
+  }
+
+  if (raw.includes("tiendanube") || raw.includes("nube")) {
+    if (isDebit) return "TIENDANUBE PAYMENTS - DÉBITO";
+    if (isCredit) return installments > 1 ? `TIENDANUBE PAYMENTS - CRÉDITO ${installments} CUOTAS` : "TIENDANUBE PAYMENTS - CRÉDITO 1 CUOTA";
+    return "TIENDANUBE PAYMENTS";
+  }
+
+  if (isCard) {
+    if (isDebit) return "TARJETA - DÉBITO";
+    if (isCredit) return installments > 1 ? `TARJETA - CRÉDITO ${installments} CUOTAS` : "TARJETA - CRÉDITO 1 CUOTA";
+    return installments > 1 ? `TARJETA - ${installments} CUOTAS` : "TARJETA";
+  }
+
+  // 5) último fallback: algo legible
+  return raw ? raw.toUpperCase() : "";
 }
 
 function colToA1_(colIndex1Based: number) {
@@ -118,7 +159,6 @@ async function existsTNOrderInRemitos_(orderId: number | string) {
 function isSCNLsku(sku: string) {
   return safeString(sku).toUpperCase().endsWith("-SCNL");
 }
-
 function ownerFromSku_(sku: string) {
   return isSCNLsku(sku) ? "SCNL" : "";
 }
@@ -127,15 +167,43 @@ function pickClient_(body: any) {
   const c = body?.customer || body?.client || {};
   const fullName = `${safeString(c?.name)} ${safeString(c?.surname)}`.trim();
 
+  // OJO: algunos webhooks traen address separado
+  const province =
+    safeString(c?.province) ||
+    safeString(body?.shipping_address?.province) ||
+    safeString(body?.billing_address?.province);
+
+  const city =
+    safeString(c?.city) ||
+    safeString(body?.shipping_address?.city) ||
+    safeString(body?.billing_address?.city);
+
   return {
     name: fullName || "Cliente Tiendanube",
     dni: safeString(c?.identification || c?.dni),
-    province: safeString(c?.province),
-    city: safeString(c?.city),
-    phone: safeString(c?.phone),
+    province,
+    city,
+    phone:
+      safeString(c?.phone) ||
+      safeString(body?.shipping_address?.phone) ||
+      safeString(body?.billing_address?.phone),
   };
 }
 
+function pickOrderDateISO_(body: any) {
+  return (
+    safeString(body?.paid_at) ||
+    safeString(body?.updated_at) ||
+    safeString(body?.created_at) ||
+    new Date().toISOString()
+  );
+}
+
+/**
+ * Construye payload compatible con tu saveRemito() actual (GAS):
+ * - totales: {subtotal, costoEnvio, costoEnvioOwner, totalFinal, feeTotal}
+ * - items: {sku, articulo, talle, cantidad, precioUnitario, owner}
+ */
 function buildERPDataFromTNWebhook_(body: any) {
   const orderId = body?.id;
   const items = Array.isArray(body?.items) ? body.items : [];
@@ -143,17 +211,19 @@ function buildERPDataFromTNWebhook_(body: any) {
 
   const expandedItems = items.flatMap((i: any) => {
     const qty = safeNumber(i?.quantity);
-    const sku = safeString(i?.sku);
+    const sku = safeString(i?.sku).toUpperCase();
     if (!sku || qty <= 0) return [];
 
     const articulo = safeString(i?.name || i?.product_name);
 
-    // NOTA: talle de TN no es confiable; lo dejás igual (el GAS/stock lo resuelve por SKU)
+    // Si TN trae variant attributes, lo mandamos, pero GAS igual revalida por SKU/maestro
     const talle =
       safeString(i?.variant?.attributes?.talle) ||
       safeString(i?.variant?.attributes?.size) ||
+      safeString(i?.variant_name) ||
       "";
 
+    // En webhooks, a veces viene "unit_price" o "price"
     const precioUnitario = normalizeMoney(i?.unit_price ?? i?.price ?? 0);
     const owner = ownerFromSku_(sku);
 
@@ -162,35 +232,65 @@ function buildERPDataFromTNWebhook_(body: any) {
       articulo,
       talle,
       cantidad: 1,
-      precioUnitario,
-      owner, // "SCNL" o ""
+      precioUnitario, // BRUTO (lo mejor posible con lo que trae webhook)
+      owner,
     }));
   });
 
+  // Totales (en webhook pueden variar; normalizamos y mandamos en "totales")
   const subtotal = normalizeMoney(body?.subtotal ?? body?.subtotal_price ?? 0);
   const costoEnvio = normalizeMoney(body?.shipping_cost ?? body?.shipping_price ?? 0);
   const totalFinal = normalizeMoney(body?.total ?? body?.total_price ?? 0);
 
-  const fechaISO = safeString(body?.paid_at || body?.created_at || new Date().toISOString());
+  // Si el cliente no pagó envío (costoEnvio=0), por ahora dejamos costoEnvioOwner=0.
+  // Más adelante lo podés poblar con tu tabla de costos/logística.
+  const costoEnvioOwner = 0;
+
+  // Fee total (si no lo tenés, 0). En import masivo lo vamos a calcular/mejorar.
+  const feeTotal = 0;
+
+  const fechaISO = pickOrderDateISO_(body);
 
   return {
     fechaISO,
+
     nombre: client.name,
     dni: client.dni,
-    localidad: `${client.province} - ${client.city}`.trim(),
+    provincia: client.province,
+    localidad: client.city,
     telefono: client.phone,
 
-    transporte: safeString(body?.shipping_option || body?.shipping_option_name) || "Tiendanube",
-    metodoPago: safeString(body?.gateway || body?.payment_method) || "Tiendanube",
+    transporte:
+      safeString(body?.shipping_option_name) ||
+      safeString(body?.shipping_option) ||
+      "Tiendanube",
+
+    metodoPago:
+      safeString(body?.gateway) ||
+      safeString(body?.payment_method) ||
+      "Tiendanube",
+
     vendedor: "Tiendanube",
     condicionCompra: "Minorista",
     estado: "Pagado",
 
+    // NUEVO: totales (lo que espera tu GAS actualizado)
+    totales: {
+      subtotal,
+      costoEnvio,
+      costoEnvioOwner,
+      feeTotal,
+      totalFinal,
+    },
+
+    // Mantengo compat por si algún bloque usa los viejos (no molesta)
     subtotal,
     costoEnvio,
     totalFinal,
 
+    // Si más adelante querés usarlo, lo mandamos explícito
     recargoDescuento: 0,
+
     detalleGeneral: `TN_ORDER_ID=${safeString(orderId)}`,
 
     items: expandedItems,
@@ -201,7 +301,7 @@ async function saveRemitoToERP_(data: any) {
   if (!GS_URL) throw new Error("APPS_SCRIPT_URL no configurada.");
 
   const controller = new AbortController();
-  const t = setTimeout(() => controller.abort(), 20_000);
+  const t = setTimeout(() => controller.abort(), 25_000);
 
   const res = await fetch(GS_URL, {
     method: "POST",
@@ -240,7 +340,6 @@ export async function POST(req: Request) {
 
     const body = await req.json().catch(() => ({} as any));
     const orderId = body?.id;
-
     if (!orderId) return json({ ok: false, error: "Webhook sin body.id" }, 400);
 
     const status = safeString(body?.status).toLowerCase();
@@ -259,7 +358,10 @@ export async function POST(req: Request) {
 
     const erpResp = await saveRemitoToERP_(data);
 
-    return json({ ok: true, orderId, remitoId: erpResp?.id ?? null }, 200);
+    return json(
+      { ok: true, orderId, remitoId: erpResp?.id ?? null, apiVersion: erpResp?.apiVersion ?? null },
+      200
+    );
   } catch (err: any) {
     const msg =
       err?.name === "AbortError"
