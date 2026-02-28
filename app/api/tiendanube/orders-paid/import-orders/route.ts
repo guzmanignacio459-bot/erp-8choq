@@ -1108,19 +1108,61 @@ async function callMercadoPagoImportEndpoint(
 
   const url = `${proto}://${host}/api/mercadopago/import-payment`;
 
-  const res = await fetch(url, {
+  // Forwardeamos los tokens reales que llegaron al endpoint actual
+const incomingImportToken =
+  (req.headers.get("x-import-token") ?? "").trim() ||
+  (req.headers.get("x-import-orders-token") ?? "").trim();
+
+const incomingMpToken =
+  (req.headers.get("x-mp-import-token") ?? "").trim();
+
+// Construimos headers de forma segura
+const headers: Record<string, string> = {
+  "Content-Type": "application/json",
+};
+
+// Siempre intentamos usar el mismo import-token que entró
+if (incomingImportToken) {
+  headers["x-import-token"] = incomingImportToken;
+} else if (process.env.IMPORT_TOKEN) {
+  headers["x-import-token"] = process.env.IMPORT_TOKEN;
+}
+
+// MP token: prioridad al manual → fallback a ENV
+const envMpToken = (process.env.MP_IMPORT_TOKEN ?? "").trim();
+const mpTokenToUse = incomingMpToken || envMpToken;
+if (mpTokenToUse) {
+  headers["x-mp-import-token"] = mpTokenToUse;
+}
+
+// Timeout por orden (12 segundos)
+const controller = new AbortController();
+const timeoutMs = 12000;
+const timeout = setTimeout(() => controller.abort(), timeoutMs);
+
+let res: Response;
+
+try {
+  res = await fetch(url, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-mp-import-token": process.env.MP_IMPORT_TOKEN ?? "",
-      "x-import-token": process.env.IMPORT_TOKEN ?? "",
-    },
+    headers,
     body: JSON.stringify({
       tnOrderId: String(tnOrderId),
       force: force === true,
     }),
     cache: "no-store",
+    signal: controller.signal,
   });
+} catch (e: any) {
+  if (e?.name === "AbortError") {
+    throw new Error(
+      `MP import timeout after ${timeoutMs}ms for tnOrderId=${tnOrderId}`
+    );
+  }
+  throw e;
+} finally {
+  clearTimeout(timeout);
+}
 
   const text = await res.text();
 
