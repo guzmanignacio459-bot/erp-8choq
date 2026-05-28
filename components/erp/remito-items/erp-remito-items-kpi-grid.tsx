@@ -110,7 +110,7 @@ export function ErpRemitoItemsKpiGrid({
         const Icon = item.icon;
         return (
           <article
-            key={item.label}
+            key={`kpi-${item.label}`}
             className={cn(
               "erp-card erp-card-glow relative p-4 sm:p-5",
               ACCENT_CLASS[item.accent]

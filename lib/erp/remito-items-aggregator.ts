@@ -62,6 +62,15 @@ function topFromMap<T extends { unidades: number }>(
     .slice(0, limit);
 }
 
+function topNetoFromMap<T extends { neto: number }>(
+  map: Map<string, T>,
+  limit = TOP_N
+): T[] {
+  return Array.from(map.values())
+    .sort((a, b) => b.neto - a.neto)
+    .slice(0, limit);
+}
+
 export function computeRemitoItemsProductAnalytics(
   items: ErpRemitoItemRow[]
 ): ErpRemitoItemsProductAnalytics {
@@ -139,6 +148,6 @@ export function computeRemitoItemsProductAnalytics(
     netoPorOwner: Array.from(ownerMap.values()).sort(
       (a, b) => b.neto - a.neto
     ),
-    netoPorProducto: topFromMap(productMap),
+    netoPorProducto: topNetoFromMap(productMap),
   };
 }

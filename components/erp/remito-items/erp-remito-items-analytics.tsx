@@ -12,16 +12,19 @@ type ErpRemitoItemsAnalyticsProps = {
   analytics: ErpRemitoItemsProductAnalytics;
 };
 
+type RankRow = {
+  label: string;
+  value: number;
+};
+
 function MiniRankList({
   title,
   rows,
-  valueKey,
-  labelKey,
+  format,
 }: {
   title: string;
-  rows: Record<string, string | number>[];
-  labelKey: string;
-  valueKey: string;
+  rows: RankRow[];
+  format: "currency" | "count";
 }) {
   return (
     <div className="rounded-lg border border-[hsl(var(--erp-border-subtle))] bg-[hsl(var(--erp-bg-hover)/0.25)] p-3">
@@ -32,21 +35,21 @@ function MiniRankList({
         <p className="text-xs text-[hsl(var(--erp-fg-muted))]">Sin datos</p>
       ) : (
         <ul className="space-y-2">
-          {rows.map((row, i) => (
+          {rows.map((row, index) => (
             <li
-              key={`${title}-${i}-${String(row[labelKey])}`}
+              key={`${title}-${row.label}-${index}`}
               className="flex items-start justify-between gap-2 text-xs"
             >
               <span
                 className="min-w-0 flex-1 truncate text-[hsl(var(--erp-fg-muted))]"
-                title={String(row[labelKey])}
+                title={row.label}
               >
-                {i + 1}. {String(row[labelKey])}
+                {index + 1}. {row.label}
               </span>
               <span className="shrink-0 tabular-nums text-[hsl(var(--erp-fg))]">
-                {valueKey === "neto"
-                  ? formatAnalyticsCurrency(Number(row[valueKey]))
-                  : formatAnalyticsCount(Number(row[valueKey]))}
+                {format === "currency"
+                  ? formatAnalyticsCurrency(row.value)
+                  : formatAnalyticsCount(row.value)}
               </span>
             </li>
           ))}
@@ -73,48 +76,43 @@ export function ErpRemitoItemsAnalytics({
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         <MiniRankList
           title="Top SKU (unidades)"
+          format="count"
           rows={analytics.topSku.map((r) => ({
             label: r.sku,
             value: r.unidades,
           }))}
-          labelKey="label"
-          valueKey="value"
         />
         <MiniRankList
           title="Top artículo (unidades)"
+          format="count"
           rows={analytics.topArticulo.map((r) => ({
             label: r.articulo,
             value: r.unidades,
           }))}
-          labelKey="label"
-          valueKey="value"
         />
         <MiniRankList
           title="Ventas por talle"
+          format="count"
           rows={analytics.ventasPorTalle.map((r) => ({
             label: r.talle,
             value: r.unidades,
           }))}
-          labelKey="label"
-          valueKey="value"
         />
         <MiniRankList
           title="Neto por owner"
+          format="currency"
           rows={analytics.netoPorOwner.map((r) => ({
             label: r.owner,
             value: r.neto,
           }))}
-          labelKey="label"
-          valueKey="neto"
         />
         <MiniRankList
           title="Neto por producto"
+          format="currency"
           rows={analytics.netoPorProducto.map((r) => ({
             label: `${r.sku} · ${r.articulo}`,
             value: r.neto,
           }))}
-          labelKey="label"
-          valueKey="neto"
         />
       </div>
     </section>

@@ -18,6 +18,7 @@ import {
   computeRemitoItemsSummary,
 } from "@/lib/erp/remito-items-aggregator";
 import { filterRemitoItemsClient } from "@/lib/erp/remito-items-filter";
+import { sortRemitoItemsByFechaDesc } from "@/lib/erp/remito-items-sort";
 import {
   DEFAULT_PERIOD_PRESET,
   getAppliedPeriodLabel,
@@ -62,8 +63,14 @@ function startOfDay(d: Date): Date {
 function getQueryRange(
   preset: PeriodPreset,
   customFrom: string,
-  customTo: string
+  customTo: string,
+  specificDay: string
 ): { from?: string; to?: string } {
+  const day = specificDay.trim();
+  if (day) {
+    return { from: day, to: day };
+  }
+
   if (preset === "all") return {};
   const now = new Date();
   const todayStart = startOfDay(now);
@@ -107,6 +114,7 @@ export function ErpRemitoItemsDashboard() {
     useState<PeriodPreset>(DEFAULT_PERIOD_PRESET);
   const [customFrom, setCustomFrom] = useState("");
   const [customTo, setCustomTo] = useState("");
+  const [specificDay, setSpecificDay] = useState("");
   const [gasSku, setGasSku] = useState("");
   const [gasOwner, setGasOwner] = useState("");
 
@@ -120,9 +128,9 @@ export function ErpRemitoItemsDashboard() {
         preset: periodPreset,
         customFrom,
         customTo,
-        specificDay: null,
+        specificDay: specificDay.trim() || null,
       }),
-    [periodPreset, customFrom, customTo]
+    [periodPreset, customFrom, customTo, specificDay]
   );
 
   const load = useCallback(async () => {
@@ -130,7 +138,12 @@ export function ErpRemitoItemsDashboard() {
     setError(null);
 
     try {
-      const range = getQueryRange(periodPreset, customFrom, customTo);
+      const range = getQueryRange(
+        periodPreset,
+        customFrom,
+        customTo,
+        specificDay
+      );
       const params = new URLSearchParams();
       if (range.from) params.set("from", range.from);
       if (range.to) params.set("to", range.to);
@@ -156,21 +169,20 @@ export function ErpRemitoItemsDashboard() {
     } finally {
       setLoading(false);
     }
-  }, [periodPreset, customFrom, customTo, gasSku, gasOwner]);
+  }, [periodPreset, customFrom, customTo, specificDay, gasSku, gasOwner]);
 
   useEffect(() => {
     void load();
   }, [load]);
 
-  const filteredItems = useMemo(
-    () =>
-      filterRemitoItemsClient(items, {
-        articulo: clientArticulo,
-        talle: clientTalle,
-        q: clientQ,
-      }),
-    [items, clientArticulo, clientTalle, clientQ]
-  );
+  const filteredItems = useMemo(() => {
+    const filtered = filterRemitoItemsClient(items, {
+      articulo: clientArticulo,
+      talle: clientTalle,
+      q: clientQ,
+    });
+    return sortRemitoItemsByFechaDesc(filtered);
+  }, [items, clientArticulo, clientTalle, clientQ]);
 
   const summary = useMemo(
     () => computeRemitoItemsSummary(filteredItems),
@@ -228,9 +240,10 @@ export function ErpRemitoItemsDashboard() {
             </label>
             <select
               value={periodPreset}
-              onChange={(e) =>
-                setPeriodPreset(e.target.value as PeriodPreset)
-              }
+              onChange={(e) => {
+                setPeriodPreset(e.target.value as PeriodPreset);
+                setSpecificDay("");
+              }}
               className={inputClass}
             >
               {PERIOD_OPTIONS.map((opt) => (
@@ -267,6 +280,29 @@ export function ErpRemitoItemsDashboard() {
               </div>
             </>
           )}
+
+          <div className="flex flex-col gap-1.5">
+            <label className="text-[10px] font-medium uppercase tracking-wider text-[hsl(var(--erp-fg-subtle))]">
+              Día específico (GAS)
+            </label>
+            <div className="flex gap-2">
+              <input
+                type="date"
+                value={specificDay}
+                onChange={(e) => setSpecificDay(e.target.value)}
+                className={`${inputClass} min-w-0 flex-1`}
+              />
+              {specificDay && (
+                <button
+                  type="button"
+                  onClick={() => setSpecificDay("")}
+                  className="shrink-0 rounded-lg border border-[hsl(var(--erp-border))] px-3 text-xs text-[hsl(var(--erp-fg-muted))] hover:text-[hsl(var(--erp-fg))]"
+                >
+                  Limpiar
+                </button>
+              )}
+            </div>
+          </div>
 
           <div className="flex flex-col gap-1.5">
             <label className="text-[10px] font-medium uppercase tracking-wider text-[hsl(var(--erp-fg-subtle))]">
