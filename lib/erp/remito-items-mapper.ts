@@ -6,6 +6,8 @@
 import { formatRemitoFechaDisplay } from "@/lib/erp/remitos-mapper";
 import type { ErpRemitoItemOwner, ErpRemitoItemRow } from "@/types/erp";
 
+type ErpRemitoItemRowMapped = Omit<ErpRemitoItemRow, "rowId">;
+
 function num(value: unknown): number {
   if (value == null || value === "") return 0;
   if (typeof value === "number" && Number.isFinite(value)) return value;
@@ -33,7 +35,7 @@ function pickNetoDisplay(netoReal: unknown, netoPrenda: unknown): number {
   return num(netoPrenda);
 }
 
-export function mapGasRemitoItemRow(raw: unknown): ErpRemitoItemRow | null {
+export function mapGasRemitoItemRow(raw: unknown): ErpRemitoItemRowMapped | null {
   if (!raw || typeof raw !== "object") return null;
   const row = raw as Record<string, unknown>;
 
@@ -83,9 +85,18 @@ export function mapGasRemitoItemsPayload(raw: unknown): ErpRemitoItemRow[] {
       : payload;
 
   const itemsRaw = Array.isArray(data.items) ? data.items : [];
-  return itemsRaw
-    .map(mapGasRemitoItemRow)
-    .filter((r): r is ErpRemitoItemRow => r !== null);
+  const items: ErpRemitoItemRow[] = [];
+
+  for (let index = 0; index < itemsRaw.length; index++) {
+    const mapped = mapGasRemitoItemRow(itemsRaw[index]);
+    if (!mapped) continue;
+    items.push({
+      ...mapped,
+      rowId: `${mapped.idRemito}-${mapped.sku}-${mapped.talle}-${mapped.fechaRaw}-${index}`,
+    });
+  }
+
+  return items;
 }
 
 export function displayMpFeeReal(row: ErpRemitoItemRow): number {

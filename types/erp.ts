@@ -311,6 +311,7 @@ export type ErpAnalyticsResponse = {
 export type ErpRemitoItemOwner = "8Q" | "SCNL";
 
 export type ErpRemitoItemRow = {
+  rowId: string;
   idRemito: string;
   fechaRaw: string;
   fechaDisplay: string;

@@ -109,7 +109,7 @@ export function ErpRemitoItemsTable({ items }: ErpRemitoItemsTableProps) {
     <>
       <div className="space-y-3 md:hidden">
         {items.map((row) => (
-          <MobileCard key={`${row.idRemito}-${row.sku}-${row.talle}-${row.fechaRaw}`} row={row} />
+          <MobileCard key={row.rowId} row={row} />
         ))}
       </div>
 
@@ -142,7 +142,7 @@ export function ErpRemitoItemsTable({ items }: ErpRemitoItemsTableProps) {
               const mpFee = displayMpFeeReal(row);
               return (
                 <tr
-                  key={`${row.idRemito}-${row.sku}-${row.talle}-${row.fechaRaw}-${row.precioUnitario}`}
+                  key={row.rowId}
                   className="border-b border-[hsl(var(--erp-border-subtle))] last:border-0 hover:bg-[hsl(var(--erp-bg-hover)/0.35)]"
                 >
                   <td className="px-3 py-2.5 whitespace-nowrap text-[hsl(var(--erp-fg-muted))]">
