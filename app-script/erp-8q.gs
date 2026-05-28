@@ -1845,6 +1845,207 @@ function getAnalyticsSummary({ from, to } = {}) {
 }
 
 
+function normalizeRemitoItemOwner_(ownerCell) {
+  return String(ownerCell || '').trim().toUpperCase() === 'SCNL' ? 'SCNL' : '8Q';
+}
+
+function matchesRemitoItemOwnerFilter_(ownerCell, ownerFilter) {
+  var f = String(ownerFilter || '').trim().toUpperCase();
+  if (!f || f === 'ALL' || f === 'TODOS') return true;
+  var normalized = normalizeRemitoItemOwner_(ownerCell);
+  if (f === 'SCNL') return normalized === 'SCNL';
+  if (f === '8Q') return normalized === '8Q';
+  return true;
+}
+
+function formatRemitoItemFecha_(value) {
+  if (value instanceof Date && !isNaN(value.getTime())) {
+    return value.toISOString();
+  }
+  return String(value || '').trim();
+}
+
+function effectiveRemitoItemUnits_(cantidad) {
+  var n = parseAnalyticsInt_(cantidad);
+  return n > 0 ? n : 1;
+}
+
+function pickNetoDisplayNum_(netoReal, netoPrenda) {
+  var real = parseAnalyticsNum_(netoReal);
+  if (real !== 0) return real;
+  return parseAnalyticsNum_(netoPrenda);
+}
+
+function pickMpFeeTotalNum_(totalCost, fee, platform) {
+  var total = parseAnalyticsNum_(totalCost);
+  if (total !== 0) return total;
+  return parseAnalyticsNum_(fee) + parseAnalyticsNum_(platform);
+}
+
+/**
+ * REMITO_ITEMS read-only — 1 prenda = 1 fila.
+ * Solo suma columnas existentes; no recalcula netos ni prorrateos.
+ */
+function getRemitoItemsFull({ from, to, sku, owner } = {}) {
+  var fromStr = String(from || '').trim();
+  var toStr = String(to || '').trim();
+  var skuFilter = String(sku || '').trim().toUpperCase();
+  var ownerFilter = String(owner || '').trim();
+
+  var shI = getSheet(SPREADSHEET_ID, SHEET_ITEMS);
+  var valsI = shI.getDataRange().getValues();
+
+  var emptySummary = {
+    totalPrendas: 0,
+    netoTotalPrendas: 0,
+    descuentoTotal: 0,
+    shippingTotal: 0,
+    feeTotal: 0,
+    mpFeeAsignadoRealTotal: 0,
+    unidadesScnl: 0,
+    unidades8q: 0,
+    rowsInScope: 0,
+  };
+
+  if (!valsI || valsI.length < 2) {
+    return {
+      ok: true,
+      data: { items: [], summary: emptySummary, _log: { rowsItems: 0, rowsFiltered: 0 } },
+    };
+  }
+
+  var hdrI = valsI[0].map(function (h) { return String(h || '').trim(); });
+  var idxI = function (name) { return headerIndex_(hdrI, name); };
+  var pickIdxI = function () {
+    for (var i = 0; i < arguments.length; i++) {
+      var ix = idxI(arguments[i]);
+      if (ix !== -1) return ix;
+    }
+    return -1;
+  };
+  var cellI = function (row, ix) { return ix === -1 ? '' : row[ix]; };
+
+  var iId = pickIdxI('ID Remito', 'ID');
+  var iFecha = pickIdxI('Fecha');
+  var iSku = pickIdxI('SKU');
+  var iArticulo = pickIdxI('Articulo', 'Artículo');
+  var iTalle = pickIdxI('Talle');
+  var iOwner = pickIdxI('Owner');
+  var iCantidad = pickIdxI('Cantidad');
+  var iPrecio = pickIdxI('Precio Unitario');
+  var iDesc = pickIdxI('DESCUENTO_ASIGNADO');
+  var iShip = pickIdxI('SHIPPING_ASIGNADO');
+  var iFee = pickIdxI('FEE_ASIGNADO');
+  var iNeto = pickIdxI('NETO_PRENDA');
+  var iNetoReal = pickIdxI('NETO_PRENDA_REAL');
+  var iMpFee = pickIdxI('MP_FEE_ASIGNADO_REAL');
+  var iMpPlatform = pickIdxI('MP_PLATFORM_FEE_ASIGNADO_REAL');
+  var iMpTotal = pickIdxI('MP_TOTAL_COST_ASIGNADO_REAL');
+  var iNetoScnl = pickIdxI('NETO_PRENDA_SCNL');
+  var iNeto8q = pickIdxI('NETO PRENDA 8Q');
+
+  var items = [];
+  var summary = {
+    totalPrendas: 0,
+    netoTotalPrendas: 0,
+    descuentoTotal: 0,
+    shippingTotal: 0,
+    feeTotal: 0,
+    mpFeeAsignadoRealTotal: 0,
+    unidadesScnl: 0,
+    unidades8q: 0,
+    rowsInScope: 0,
+  };
+
+  var rowsItems = 0;
+  var rowsFiltered = 0;
+
+  for (var r = 1; r < valsI.length; r++) {
+    var rowI = valsI[r];
+    if (!rowI.some(function (c) { return c !== '' && c != null; })) continue;
+
+    rowsItems += 1;
+
+    var fechaRaw = formatRemitoItemFecha_(cellI(rowI, iFecha));
+    var fecha = parseAnalyticsDate_(fechaRaw);
+    if (!isAnalyticsDateInRange_(fecha, fromStr, toStr)) continue;
+
+    var skuVal = String(cellI(rowI, iSku) || '').trim();
+    if (skuFilter && skuVal.toUpperCase().indexOf(skuFilter) === -1) continue;
+
+    var ownerCell = cellI(rowI, iOwner);
+    if (!matchesRemitoItemOwnerFilter_(ownerCell, ownerFilter)) continue;
+
+    rowsFiltered += 1;
+
+    var units = effectiveRemitoItemUnits_(cellI(rowI, iCantidad));
+    var ownerNorm = normalizeRemitoItemOwner_(ownerCell);
+    var netoReal = parseAnalyticsNum_(cellI(rowI, iNetoReal));
+    var netoPrenda = parseAnalyticsNum_(cellI(rowI, iNeto));
+    var netoDisplay = pickNetoDisplayNum_(netoReal, netoPrenda);
+    var desc = parseAnalyticsNum_(cellI(rowI, iDesc));
+    var ship = parseAnalyticsNum_(cellI(rowI, iShip));
+    var fee = parseAnalyticsNum_(cellI(rowI, iFee));
+    var mpFeeTotal = pickMpFeeTotalNum_(
+      cellI(rowI, iMpTotal),
+      cellI(rowI, iMpFee),
+      cellI(rowI, iMpPlatform)
+    );
+
+    items.push({
+      idRemito: String(cellI(rowI, iId) || '').trim(),
+      fecha: fechaRaw,
+      sku: skuVal,
+      articulo: String(cellI(rowI, iArticulo) || '').trim(),
+      talle: String(cellI(rowI, iTalle) || '').trim(),
+      owner: ownerNorm,
+      cantidad: units,
+      precioUnitario: parseAnalyticsNum_(cellI(rowI, iPrecio)),
+      descuentoAsignado: desc,
+      shippingAsignado: ship,
+      feeAsignado: fee,
+      netoPrenda: netoPrenda,
+      netoPrendaReal: netoReal !== 0 ? netoReal : null,
+      netoDisplay: netoDisplay,
+      mpFeeAsignadoReal: parseAnalyticsNum_(cellI(rowI, iMpFee)) || null,
+      mpPlatformFeeAsignadoReal: parseAnalyticsNum_(cellI(rowI, iMpPlatform)) || null,
+      mpTotalCostAsignadoReal: parseAnalyticsNum_(cellI(rowI, iMpTotal)) || null,
+      netoPrendaScnl: parseAnalyticsNum_(cellI(rowI, iNetoScnl)),
+      netoPrenda8q: parseAnalyticsNum_(cellI(rowI, iNeto8q)),
+    });
+
+    summary.totalPrendas += units;
+    summary.netoTotalPrendas += netoDisplay * units;
+    summary.descuentoTotal += desc * units;
+    summary.shippingTotal += ship * units;
+    summary.feeTotal += fee * units;
+    summary.mpFeeAsignadoRealTotal += mpFeeTotal * units;
+    if (ownerNorm === 'SCNL') summary.unidadesScnl += units;
+    else summary.unidades8q += units;
+  }
+
+  summary.rowsInScope = rowsFiltered;
+
+  Logger.log(
+    '[getRemitoItemsFull] rowsItems=' + rowsItems +
+    ' rowsFiltered=' + rowsFiltered +
+    ' totalPrendas=' + summary.totalPrendas
+  );
+
+  return {
+    ok: true,
+    data: {
+      items: items,
+      summary: summary,
+      _log: {
+        rowsItems: rowsItems,
+        rowsFiltered: rowsFiltered,
+      },
+    },
+  };
+}
+
+
 function setEstadoRemito({ id, estado }) {
   if (!id) throw new Error('id requerido');
   if (!CATALOGS.estados.includes(estado)) throw new Error('Estado inválido');
@@ -2252,6 +2453,14 @@ if (method === 'listRemitosFull') {
       const from = body.from || rawParam.from || '';
       const to = body.to || rawParam.to || '';
       return jsonNoRedirect(getAnalyticsSummary({ from: from, to: to }));
+    }
+
+    if (method === 'getRemitoItemsFull') {
+      const from = body.from || rawParam.from || '';
+      const to = body.to || rawParam.to || '';
+      const sku = body.sku || rawParam.sku || '';
+      const owner = body.owner || rawParam.owner || '';
+      return jsonNoRedirect(getRemitoItemsFull({ from: from, to: to, sku: sku, owner: owner }));
     }
 
     // FALLBACK

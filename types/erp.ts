@@ -305,3 +305,81 @@ export type ErpAnalyticsResponse = {
   attemptedActions?: string[];
   error?: string;
 };
+
+/** REMITO_ITEMS — Fase 4 (read-only, 1 prenda = 1 fila) */
+
+export type ErpRemitoItemOwner = "8Q" | "SCNL";
+
+export type ErpRemitoItemRow = {
+  idRemito: string;
+  fechaRaw: string;
+  fechaDisplay: string;
+  sku: string;
+  articulo: string;
+  talle: string;
+  owner: ErpRemitoItemOwner;
+  cantidad: number;
+  precioUnitario: number;
+  descuentoAsignado: number;
+  shippingAsignado: number;
+  feeAsignado: number;
+  netoPrenda: number;
+  netoPrendaReal: number | null;
+  netoDisplay: number;
+  mpFeeAsignadoReal: number | null;
+  mpPlatformFeeAsignadoReal: number | null;
+  mpTotalCostAsignadoReal: number | null;
+};
+
+export type ErpRemitoItemsSummary = {
+  totalPrendas: number;
+  netoTotalPrendas: number;
+  descuentoTotal: number;
+  shippingTotal: number;
+  feeTotal: number;
+  mpFeeAsignadoRealTotal: number;
+  unidadesScnl: number;
+  unidades8q: number;
+  rowsInScope: number;
+};
+
+export type ErpRemitoItemsRankedRow = {
+  sku: string;
+  articulo: string;
+  unidades: number;
+  neto: number;
+};
+
+export type ErpRemitoItemsTalleRow = {
+  talle: string;
+  unidades: number;
+};
+
+export type ErpRemitoItemsOwnerRow = {
+  owner: ErpRemitoItemOwner;
+  unidades: number;
+  neto: number;
+};
+
+export type ErpRemitoItemsProductAnalytics = {
+  topSku: ErpRemitoItemsRankedRow[];
+  topArticulo: { articulo: string; unidades: number; neto: number }[];
+  ventasPorTalle: ErpRemitoItemsTalleRow[];
+  netoPorOwner: ErpRemitoItemsOwnerRow[];
+  netoPorProducto: ErpRemitoItemsRankedRow[];
+};
+
+export type ErpRemitoItemsPayload = {
+  items: ErpRemitoItemRow[];
+  summary: ErpRemitoItemsSummary;
+};
+
+export type ErpRemitoItemsResponse = {
+  ok: boolean;
+  data: ErpRemitoItemsPayload | null;
+  fetchedAt: string;
+  source: "apps-script";
+  gasActionUsed?: string;
+  attemptedActions?: string[];
+  error?: string;
+};
