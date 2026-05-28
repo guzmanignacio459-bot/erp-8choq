@@ -10,6 +10,7 @@ import {
   Loader2,
   Package,
   RefreshCw,
+  TrendingUp,
   User,
   Truck,
 } from "lucide-react";
@@ -18,7 +19,9 @@ import { hasMercadoPagoDetailData } from "@/lib/erp/remito-detail-mapper";
 import {
   formatRemitosCurrency,
   parseRemitoAmount,
+  parseRemitoInteger,
 } from "@/lib/erp/remitos-kpis";
+import { formatRemitoFechaDisplay } from "@/lib/erp/remitos-mapper";
 import { resolvePagoEnvioLabel } from "@/lib/erp/remitos-shipping-display";
 import { cn } from "@/lib/utils";
 import type {
@@ -33,6 +36,57 @@ function formatAmountDisplay(value: string | undefined): string {
   const amount = parseRemitoAmount(trimmed);
   if (amount !== 0) return formatRemitosCurrency(amount);
   return trimmed;
+}
+
+const MP_VALUE_LABELS: Record<string, string> = {
+  credit_card: "Tarjeta de crédito",
+  approved: "Aprobado",
+  accredited: "Acreditado",
+};
+
+function humanizeMpValue(value: string | undefined): string {
+  const trimmed = value?.trim();
+  if (!trimmed) return "";
+  return MP_VALUE_LABELS[trimmed.toLowerCase()] ?? trimmed;
+}
+
+function formatMpDateDisplay(value: string | undefined): string {
+  const trimmed = value?.trim();
+  if (!trimmed) return "";
+  return formatRemitoFechaDisplay(trimmed) || trimmed;
+}
+
+function formatPercentDisplay(value: number | null): string {
+  if (value == null || !Number.isFinite(value)) return "—";
+  return `${value.toLocaleString("es-AR", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}%`;
+}
+
+/** Métricas derivadas solo para display — no persisten ni alteran lógica financiera */
+function computeRentabilidadUiMetrics(remito: ErpRemitoDetail): {
+  netoPromedioPorPrenda: number | null;
+  costoMpPercent: number | null;
+} {
+  const mpNetoRealOrden = parseRemitoAmount(remito.mpNetoRealOrden);
+  const totalPrendas = parseRemitoInteger(remito.totalPrendas);
+  const mpTotalCostReal = parseRemitoAmount(remito.mpTotalCostReal);
+  const mpTransactionAmount = parseRemitoAmount(remito.mpTransactionAmount);
+
+  let netoPromedioPorPrenda: number | null = null;
+  if (remito.mpNetoRealOrden?.trim() && totalPrendas > 0) {
+    netoPromedioPorPrenda = mpNetoRealOrden / totalPrendas;
+  }
+
+  let costoMpPercent: number | null = null;
+  if (mpTotalCostReal > 0 && mpTransactionAmount > 0) {
+    costoMpPercent = (mpTotalCostReal / mpTransactionAmount) * 100;
+  } else if (remito.mpCostPercentReal?.trim()) {
+    costoMpPercent = parseRemitoAmount(remito.mpCostPercentReal);
+  }
+
+  return { netoPromedioPorPrenda, costoMpPercent };
 }
 
 function DetailField({
@@ -159,6 +213,12 @@ export function ErpRemitoDetailView() {
 
       setRemito(json.data);
       setGasActionUsed(json.gasActionUsed ?? null);
+      if (
+        json.data.mpPaymentId?.trim() ||
+        json.data.mpStatus?.trim()
+      ) {
+        setMpApplyError(null);
+      }
     } catch (e: unknown) {
       setRemito(null);
       setError(e instanceof Error ? e.message : String(e));
@@ -254,6 +314,7 @@ export function ErpRemitoDetailView() {
   const hasMp = hasMercadoPagoDetailData(remito);
   const tnOrderId = remito.tnOrderId?.trim() ?? "";
   const canApplyMp = Boolean(tnOrderId) && !hasMp;
+  const rentabilidadUi = computeRentabilidadUiMetrics(remito);
 
   return (
     <div className="min-w-0 max-w-full space-y-6 p-4 sm:p-6 lg:p-8">
@@ -395,7 +456,7 @@ export function ErpRemitoDetailView() {
           {mpApplyMessage && (
             <p className="text-sm text-emerald-300">{mpApplyMessage}</p>
           )}
-          {mpApplyError && (
+          {mpApplyError && !hasMp && (
             <p className="text-sm text-rose-300">{mpApplyError}</p>
           )}
         </div>
@@ -407,13 +468,22 @@ export function ErpRemitoDetailView() {
               value={remito.mpPaymentId ?? ""}
               mono
             />
-            <DetailField label="Estado" value={remito.mpStatus ?? ""} />
+            <DetailField
+              label="Estado"
+              value={humanizeMpValue(remito.mpStatus) || "—"}
+            />
             <DetailField
               label="Detalle estado"
-              value={remito.mpStatusDetail ?? ""}
+              value={humanizeMpValue(remito.mpStatusDetail) || "—"}
             />
-            <DetailField label="Tipo" value={remito.mpPaymentType ?? ""} />
-            <DetailField label="Método" value={remito.mpPaymentMethod ?? ""} />
+            <DetailField
+              label="Tipo"
+              value={humanizeMpValue(remito.mpPaymentType) || "—"}
+            />
+            <DetailField
+              label="Método"
+              value={humanizeMpValue(remito.mpPaymentMethod) || "—"}
+            />
             <DetailField label="Cuotas" value={remito.mpInstallments ?? ""} />
             <DetailField
               label="Monto operación"
@@ -453,11 +523,11 @@ export function ErpRemitoDetailView() {
             />
             <DetailField
               label="Fecha aprobado"
-              value={remito.mpDateApproved ?? ""}
+              value={formatMpDateDisplay(remito.mpDateApproved) || "—"}
             />
             <DetailField
               label="Importado en MP"
-              value={remito.mpImportedAt ?? ""}
+              value={formatMpDateDisplay(remito.mpImportedAt) || "—"}
             />
             <DetailField
               label="Payer email"
@@ -467,6 +537,65 @@ export function ErpRemitoDetailView() {
         ) : (
           <p className="text-sm text-[hsl(var(--erp-fg-muted))]">
             Mercado Pago no aplicado o no disponible
+          </p>
+        )}
+      </SectionCard>
+
+      <SectionCard title="Rentabilidad real" icon={TrendingUp}>
+        {hasMp ? (
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            <DetailField
+              label="Total final cobrado"
+              value={formatAmountDisplay(remito.totalFinal)}
+            />
+            <DetailField
+              label="Neto recibido MP"
+              value={formatAmountDisplay(remito.mpNetReceivedAmount)}
+            />
+            <DetailField
+              label="Costo total MP"
+              value={formatAmountDisplay(remito.mpTotalCostReal)}
+            />
+            <DetailField
+              label="Fee MP"
+              value={formatAmountDisplay(remito.mpFeeTotalReal)}
+            />
+            <DetailField
+              label="Platform fee"
+              value={formatAmountDisplay(remito.mpPlatformFeeTotalReal)}
+            />
+            <DetailField
+              label="Impuestos MP"
+              value={formatAmountDisplay(remito.mpTaxTotalReal)}
+            />
+            <DetailField
+              label="Financiación MP"
+              value={formatAmountDisplay(remito.mpFinancingTotalReal)}
+            />
+            <div className="min-w-0 sm:col-span-2">
+              <p className="text-[10px] font-medium uppercase tracking-wider text-[hsl(var(--erp-fg-subtle))]">
+                Neto real orden
+              </p>
+              <p className="mt-1 text-lg font-semibold tabular-nums text-emerald-300">
+                {formatAmountDisplay(remito.mpNetoRealOrden)}
+              </p>
+            </div>
+            <DetailField
+              label="Costo MP %"
+              value={formatPercentDisplay(rentabilidadUi.costoMpPercent)}
+            />
+            <DetailField
+              label="Neto promedio por prenda"
+              value={
+                rentabilidadUi.netoPromedioPorPrenda != null
+                  ? formatRemitosCurrency(rentabilidadUi.netoPromedioPorPrenda)
+                  : "—"
+              }
+            />
+          </div>
+        ) : (
+          <p className="text-sm text-[hsl(var(--erp-fg-muted))]">
+            Mercado Pago todavía no aplicado
           </p>
         )}
       </SectionCard>
