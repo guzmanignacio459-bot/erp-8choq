@@ -167,7 +167,18 @@ export async function fetchErpRemitoDetail(
       };
     }
 
-    const mapped = mapGetRemitoToErpDetail(result.payload.data);
+    const rawData = result.payload.data;
+    if (rawData && typeof rawData === "object") {
+      const raw = rawData as Record<string, unknown>;
+      console.log("[erp/remitos/detail] GAS MP raw", {
+        idRemito,
+        mpPaymentId: raw.mpPaymentId ?? raw.MP_PAYMENT_ID ?? null,
+        mpStatus: raw.mpStatus ?? raw.MP_STATUS ?? null,
+        mpNetoRealOrden: raw.mpNetoRealOrden ?? raw.MP_NETO_REAL_ORDEN ?? null,
+      });
+    }
+
+    const mapped = mapGetRemitoToErpDetail(rawData);
     if (!mapped) {
       return {
         ok: false,

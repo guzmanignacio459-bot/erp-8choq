@@ -56,6 +56,17 @@ export async function GET(_req: Request, context: RouteContext) {
     );
   }
 
+  // TEMP debug — verificar MP post-mapper (quitar cuando GAS esté validado)
+  console.log("[erp/remitos/detail] mapped MP", {
+    idRemito,
+    mpPaymentId: result.data.mpPaymentId ?? null,
+    mpStatus: result.data.mpStatus ?? null,
+    mpNetoRealOrden: result.data.mpNetoRealOrden ?? null,
+    hasMp: Boolean(
+      result.data.mpPaymentId?.trim() || result.data.mpStatus?.trim()
+    ),
+  });
+
   return json({
     ok: true,
     data: result.data,
