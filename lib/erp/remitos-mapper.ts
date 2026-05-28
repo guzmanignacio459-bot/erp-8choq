@@ -363,5 +363,28 @@ export function mapRowToErpRemito(row: unknown): ErpRemito | null {
       ["MP_STATUS", "MP Status", "mpStatus", "Estado MP"],
       "mpstatus"
     ),
+    mpFeeTotalReal: pickField(
+      flat,
+      ["MP_FEE_TOTAL_REAL", "MP Fee Total Real", "mpFeeTotalReal"],
+      "mpfeetotalreal"
+    ),
+    mpPlatformFeeTotalReal: pickField(
+      flat,
+      [
+        "MP_PLATFORM_FEE_TOTAL_REAL",
+        "MP Platform Fee Total Real",
+        "mpPlatformFeeTotalReal",
+      ],
+      "mpplatformfeetotalreal"
+    ),
+    mpTransactionAmount: pickField(
+      flat,
+      [
+        "MP_TRANSACTION_AMOUNT",
+        "MP Transaction Amount",
+        "mpTransactionAmount",
+      ],
+      "mptransactionamount"
+    ),
   };
 }

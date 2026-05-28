@@ -111,6 +111,9 @@ export type ErpRemito = {
   mpTotalCostReal?: string;
   mpNetoRealOrden?: string;
   mpStatus?: string;
+  mpFeeTotalReal?: string;
+  mpPlatformFeeTotalReal?: string;
+  mpTransactionAmount?: string;
 };
 
 /** Ítem display-only desde getRemito → REMITO_ITEMS */
@@ -230,4 +233,75 @@ export type ErpModulePageConfig = {
   integrations: string[];
   mockStats: ErpModuleMockStat[];
   plannedFeatures: string[];
+};
+
+/** Analytics — Fase 3.1 (read-only REMITOS + futuro REMITO_ITEMS / Meta) */
+
+export type ErpAnalyticsSource =
+  | "getAnalyticsSummary"
+  | "listRemitosFull-fallback";
+
+export type ErpAnalyticsMetaMetricKey =
+  | "spend"
+  | "mer"
+  | "roas"
+  | "cpa"
+  | "cac"
+  | "contribucionNeta";
+
+export type ErpAnalyticsMetaPlaceholder = {
+  connected: false;
+  plannedMetrics: ErpAnalyticsMetaMetricKey[];
+};
+
+export type ErpAnalyticsTotals = {
+  facturacionTotal: number;
+  netoRealMp: number;
+  costoTotalMp: number;
+  feeMp: number;
+  platformFee: number;
+  ordenesTotales: number;
+  ordenesConMp: number;
+  ordenesSinMp: number;
+  prendasVendidas: number;
+  ticketPromedio: number;
+  netoPromedioPorOrden: number;
+  costoMpPercentPromedio: number;
+};
+
+export type ErpAnalyticsDaySale = {
+  date: string;
+  facturacion: number;
+  ordenes: number;
+};
+
+export type ErpAnalyticsTopProduct = {
+  sku: string;
+  articulo: string;
+  unidades: number;
+};
+
+export type ErpAnalyticsTopProductsSection = {
+  available: boolean;
+  items: ErpAnalyticsTopProduct[];
+  unavailableReason?: string;
+};
+
+export type ErpAnalyticsSummary = {
+  totals: ErpAnalyticsTotals;
+  salesByDay: ErpAnalyticsDaySale[];
+  topProducts: ErpAnalyticsTopProductsSection;
+  meta: ErpAnalyticsMetaPlaceholder;
+  analyticsSource: ErpAnalyticsSource;
+  remitosInScope: number;
+};
+
+export type ErpAnalyticsResponse = {
+  ok: boolean;
+  data: ErpAnalyticsSummary | null;
+  fetchedAt: string;
+  source: "apps-script";
+  gasActionUsed?: string;
+  attemptedActions?: string[];
+  error?: string;
 };

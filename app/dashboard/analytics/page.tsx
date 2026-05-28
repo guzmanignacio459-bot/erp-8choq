@@ -1,13 +1,12 @@
 import type { Metadata } from "next";
 
-import { ModulePlaceholderPage } from "@/components/erp/layout/module-placeholder-page";
-import { getModulePlaceholder } from "@/lib/erp/module-placeholders";
+import { ErpAnalyticsDashboard } from "@/components/erp/analytics/erp-analytics-dashboard";
 
 export const metadata: Metadata = {
   title: "Analytics · 8CHOQ ERP",
-  description: "Métricas avanzadas y reportes — próximamente",
+  description: "Métricas financieras read-only desde REMITOS y Mercado Pago",
 };
 
 export default function AnalyticsPage() {
-  return <ModulePlaceholderPage config={getModulePlaceholder("analytics")} />;
+  return <ErpAnalyticsDashboard />;
 }
