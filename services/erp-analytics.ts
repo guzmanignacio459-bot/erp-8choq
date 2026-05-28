@@ -188,6 +188,13 @@ export async function fetchErpAnalytics(options?: {
       clearTimeout(timeoutId);
 
       if (mapped) {
+        const rawData = gasResult.payload.data;
+        if (rawData && typeof rawData === "object") {
+          const log = (rawData as Record<string, unknown>)._log;
+          if (log && typeof log === "object") {
+            console.log("[erp/analytics] GAS summary", log);
+          }
+        }
         return {
           ok: true,
           data: mapped,

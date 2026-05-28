@@ -1565,6 +1565,285 @@ function getRemitoById({ id }) {
   return { ok: true, data: remito };
 }
 
+/** Parse numérico read-only para analytics (montos sheet) */
+function parseAnalyticsNum_(value) {
+  if (value == null || value === '') return 0;
+  if (typeof value === 'number' && isFinite(value)) return value;
+  const s = String(value).trim().replace(/[^\d.,\-]/g, '');
+  if (!s) return 0;
+  if (s.indexOf(',') !== -1) {
+    const n = parseFloat(s.replace(/\./g, '').replace(',', '.'));
+    return isFinite(n) ? n : 0;
+  }
+  const n = parseFloat(s);
+  return isFinite(n) ? n : 0;
+}
+
+function parseAnalyticsInt_(value) {
+  if (value == null || value === '') return 0;
+  if (typeof value === 'number' && isFinite(value)) return Math.round(value);
+  const n = parseInt(String(value).replace(/[^\d\-]/g, ''), 10);
+  return isFinite(n) ? n : 0;
+}
+
+function parseAnalyticsDate_(value) {
+  if (value instanceof Date && !isNaN(value.getTime())) return new Date(value.getTime());
+  const s = String(value || '').trim();
+  if (!s) return null;
+  const d = new Date(s);
+  if (!isNaN(d.getTime())) return d;
+  const m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
+  if (m) {
+    let y = Number(m[3]);
+    if (y < 100) y += 2000;
+    const out = new Date(y, Number(m[2]) - 1, Number(m[1]));
+    return isNaN(out.getTime()) ? null : out;
+  }
+  const iso = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (iso) {
+    const out = new Date(Number(iso[1]), Number(iso[2]) - 1, Number(iso[3]));
+    return isNaN(out.getTime()) ? null : out;
+  }
+  return null;
+}
+
+function analyticsDateKey_(d) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return y + '-' + m + '-' + day;
+}
+
+function isAnalyticsDateInRange_(d, fromStr, toStr) {
+  if (!fromStr && !toStr) return true;
+  if (!d) return false;
+  const t = d.getTime();
+  if (fromStr) {
+    const fromD = parseAnalyticsDate_(fromStr);
+    if (fromD) {
+      fromD.setHours(0, 0, 0, 0);
+      if (t < fromD.getTime()) return false;
+    }
+  }
+  if (toStr) {
+    const toD = parseAnalyticsDate_(toStr);
+    if (toD) {
+      toD.setHours(23, 59, 59, 999);
+      if (t > toD.getTime()) return false;
+    }
+  }
+  return true;
+}
+
+function hasMpAppliedAnalytics_(mpPaymentId, mpStatus) {
+  return Boolean(String(mpPaymentId || '').trim() || String(mpStatus || '').trim());
+}
+
+/**
+ * Analytics read-only — REMITOS + REMITO_ITEMS.
+ * No recalcula netos, no toca stock ni import/MP.
+ */
+function getAnalyticsSummary({ from, to } = {}) {
+  const fromStr = String(from || '').trim();
+  const toStr = String(to || '').trim();
+  const TOP_N = 20;
+
+  const shR = getSheet(SPREADSHEET_ID, SHEET_REMITOS);
+  const shI = getSheet(SPREADSHEET_ID, SHEET_ITEMS);
+
+  const valsR = shR.getDataRange().getValues();
+  if (!valsR || valsR.length < 2) {
+    return {
+      ok: true,
+      data: {
+        totals: {
+          facturacionTotal: 0,
+          netoRealMp: 0,
+          costoTotalMp: 0,
+          feeMp: 0,
+          platformFee: 0,
+          ordenesTotales: 0,
+          ordenesConMp: 0,
+          ordenesSinMp: 0,
+          prendasVendidas: 0,
+          ticketPromedio: 0,
+          netoPromedioPorOrden: 0,
+          costoMpPercentPromedio: 0,
+        },
+        salesByDay: [],
+        topProducts: { available: false, items: [] },
+        remitosInScope: 0,
+        _log: { rowsRemitos: 0, rowsItems: 0, topProductsCount: 0 },
+      },
+    };
+  }
+
+  const hdrR = valsR[0].map(function (h) { return String(h || '').trim(); });
+  const idxR = function (name) { return headerIndex_(hdrR, name); };
+  const pickIdxR = function () {
+    for (var i = 0; i < arguments.length; i++) {
+      var ix = idxR(arguments[i]);
+      if (ix !== -1) return ix;
+    }
+    return -1;
+  };
+  const cellR = function (row, ix) { return ix === -1 ? '' : row[ix]; };
+
+  var iFecha = pickIdxR('Fecha');
+  var iId = pickIdxR('ID Remito');
+  var iTotalFinal = pickIdxR('Total Final');
+  var iNetoMp = pickIdxR('MP_NETO_REAL_ORDEN');
+  var iCostoMp = pickIdxR('MP_TOTAL_COST_REAL');
+  var iFeeMp = pickIdxR('MP_FEE_TOTAL_REAL');
+  var iPlatformFee = pickIdxR('MP_PLATFORM_FEE_TOTAL_REAL');
+  var iTxnAmount = pickIdxR('MP_TRANSACTION_AMOUNT');
+  var iPrendas = pickIdxR('Total De Prendas');
+  var iMpPaymentId = pickIdxR('MP_PAYMENT_ID');
+  var iMpStatus = pickIdxR('MP_STATUS');
+
+  var facturacionTotal = 0;
+  var netoRealMp = 0;
+  var costoTotalMp = 0;
+  var feeMp = 0;
+  var platformFee = 0;
+  var mpTransactionAmountTotal = 0;
+  var prendasVendidas = 0;
+  var ordenesConMp = 0;
+  var ordenesTotales = 0;
+  var dayMap = {};
+  var scopedIds = {};
+
+  for (var r = 1; r < valsR.length; r++) {
+    var rowR = valsR[r];
+    if (!rowR.some(function (c) { return c !== '' && c != null; })) continue;
+
+    var fecha = parseAnalyticsDate_(cellR(rowR, iFecha));
+    if (!isAnalyticsDateInRange_(fecha, fromStr, toStr)) continue;
+
+    var idRemito = String(cellR(rowR, iId) || '').trim();
+    if (idRemito) scopedIds[idRemito] = true;
+
+    var totalFinal = parseAnalyticsNum_(cellR(rowR, iTotalFinal));
+    facturacionTotal += totalFinal;
+    netoRealMp += parseAnalyticsNum_(cellR(rowR, iNetoMp));
+    costoTotalMp += parseAnalyticsNum_(cellR(rowR, iCostoMp));
+    feeMp += parseAnalyticsNum_(cellR(rowR, iFeeMp));
+    platformFee += parseAnalyticsNum_(cellR(rowR, iPlatformFee));
+    mpTransactionAmountTotal += parseAnalyticsNum_(cellR(rowR, iTxnAmount));
+    prendasVendidas += parseAnalyticsInt_(cellR(rowR, iPrendas));
+
+    if (hasMpAppliedAnalytics_(cellR(rowR, iMpPaymentId), cellR(rowR, iMpStatus))) {
+      ordenesConMp += 1;
+    }
+    ordenesTotales += 1;
+
+    if (fecha) {
+      var dk = analyticsDateKey_(fecha);
+      if (!dayMap[dk]) dayMap[dk] = { facturacion: 0, ordenes: 0 };
+      dayMap[dk].facturacion += totalFinal;
+      dayMap[dk].ordenes += 1;
+    }
+  }
+
+  var ordenesSinMp = Math.max(0, ordenesTotales - ordenesConMp);
+  var ticketPromedio = ordenesTotales > 0 ? facturacionTotal / ordenesTotales : 0;
+  var netoPromedioPorOrden = ordenesConMp > 0 ? netoRealMp / ordenesConMp : 0;
+  var costoMpPercentPromedio =
+    mpTransactionAmountTotal > 0 ? (costoTotalMp / mpTransactionAmountTotal) * 100 : 0;
+
+  var salesByDay = Object.keys(dayMap)
+    .map(function (date) {
+      return {
+        date: date,
+        facturacion: dayMap[date].facturacion,
+        ordenes: dayMap[date].ordenes,
+      };
+    })
+    .sort(function (a, b) { return b.date.localeCompare(a.date); });
+
+  var productMap = {};
+  var rowsItems = 0;
+  var valsI = shI.getDataRange().getValues();
+
+  if (valsI && valsI.length >= 2) {
+    var hdrI = valsI[0].map(function (h) { return String(h || '').trim(); });
+    var idxI = function (name) { return headerIndex_(hdrI, name); };
+    var pickIdxI = function () {
+      for (var j = 0; j < arguments.length; j++) {
+        var iy = idxI(arguments[j]);
+        if (iy !== -1) return iy;
+      }
+      return -1;
+    };
+    var cellI = function (row, ix) { return ix === -1 ? '' : row[ix]; };
+
+    var iIdItem = pickIdxI('ID Remito', 'ID');
+    var iSku = pickIdxI('SKU');
+    var iArticulo = pickIdxI('Articulo', 'Artículo');
+    var iCantidad = pickIdxI('Cantidad');
+
+    for (var ir = 1; ir < valsI.length; ir++) {
+      var rowI = valsI[ir];
+      if (!rowI.some(function (c) { return c !== '' && c != null; })) continue;
+
+      var itemId = String(cellI(rowI, iIdItem) || '').trim();
+      if (!itemId || !scopedIds[itemId]) continue;
+
+      rowsItems += 1;
+      var sku = String(cellI(rowI, iSku) || '').trim();
+      var articulo = String(cellI(rowI, iArticulo) || '').trim();
+      var key = sku + '|' + articulo;
+      var qty = parseAnalyticsInt_(cellI(rowI, iCantidad));
+      if (!productMap[key]) {
+        productMap[key] = { sku: sku, articulo: articulo, unidades: 0 };
+      }
+      productMap[key].unidades += qty;
+    }
+  }
+
+  var topItems = Object.keys(productMap)
+    .map(function (k) { return productMap[k]; })
+    .sort(function (a, b) { return b.unidades - a.unidades; })
+    .slice(0, TOP_N);
+
+  Logger.log(
+    '[getAnalyticsSummary] rowsRemitos=' + ordenesTotales +
+    ' rowsItems=' + rowsItems +
+    ' topProductsCount=' + topItems.length
+  );
+
+  return {
+    ok: true,
+    data: {
+      totals: {
+        facturacionTotal: facturacionTotal,
+        netoRealMp: netoRealMp,
+        costoTotalMp: costoTotalMp,
+        feeMp: feeMp,
+        platformFee: platformFee,
+        ordenesTotales: ordenesTotales,
+        ordenesConMp: ordenesConMp,
+        ordenesSinMp: ordenesSinMp,
+        prendasVendidas: prendasVendidas,
+        ticketPromedio: ticketPromedio,
+        netoPromedioPorOrden: netoPromedioPorOrden,
+        costoMpPercentPromedio: costoMpPercentPromedio,
+      },
+      salesByDay: salesByDay,
+      topProducts: {
+        available: topItems.length > 0,
+        items: topItems,
+      },
+      remitosInScope: ordenesTotales,
+      _log: {
+        rowsRemitos: ordenesTotales,
+        rowsItems: rowsItems,
+        topProductsCount: topItems.length,
+      },
+    },
+  };
+}
+
 
 function setEstadoRemito({ id, estado }) {
   if (!id) throw new Error('id requerido');
@@ -1688,6 +1967,12 @@ function handleRequest(e) {
   if (action === "listRemitosFull") {
   return json_(200, listRemitosFull_(payload));
 }
+
+  if (action === "getAnalyticsSummary") {
+    const from = payload?.from || "";
+    const to = payload?.to || "";
+    return json_(200, getAnalyticsSummary({ from: from, to: to }));
+  }
 
   if (action === "get_remito_by_tn_order_id") {
     const tnOrderId = String(payload?.tnOrderId || "").trim();
@@ -1962,6 +2247,12 @@ function json_(status, obj) {
 if (method === 'listRemitosFull') {
   return jsonNoRedirect(listRemitosFull_({ q: body.q || body.search || '' }));
 }
+
+    if (method === 'getAnalyticsSummary') {
+      const from = body.from || rawParam.from || '';
+      const to = body.to || rawParam.to || '';
+      return jsonNoRedirect(getAnalyticsSummary({ from: from, to: to }));
+    }
 
     // FALLBACK
     return json({ ok: false, error: 'Acción no soportada', method });
