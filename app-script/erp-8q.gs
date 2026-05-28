@@ -1896,6 +1896,7 @@ function getRemitoItemsFull({ from, to, sku, owner } = {}) {
   var valsI = shI.getDataRange().getValues();
 
   var emptySummary = {
+    totalBrutoPrendas: 0,
     totalPrendas: 0,
     netoTotalPrendas: 0,
     descuentoTotal: 0,
@@ -1946,6 +1947,7 @@ function getRemitoItemsFull({ from, to, sku, owner } = {}) {
 
   var items = [];
   var summary = {
+    totalBrutoPrendas: 0,
     totalPrendas: 0,
     netoTotalPrendas: 0,
     descuentoTotal: 0,
@@ -1991,6 +1993,7 @@ function getRemitoItemsFull({ from, to, sku, owner } = {}) {
       cellI(rowI, iMpFee),
       cellI(rowI, iMpPlatform)
     );
+    var precioUnitario = parseAnalyticsNum_(cellI(rowI, iPrecio));
 
     items.push({
       idRemito: String(cellI(rowI, iId) || '').trim(),
@@ -2000,7 +2003,7 @@ function getRemitoItemsFull({ from, to, sku, owner } = {}) {
       talle: String(cellI(rowI, iTalle) || '').trim(),
       owner: ownerNorm,
       cantidad: units,
-      precioUnitario: parseAnalyticsNum_(cellI(rowI, iPrecio)),
+      precioUnitario: precioUnitario,
       descuentoAsignado: desc,
       shippingAsignado: ship,
       feeAsignado: fee,
@@ -2014,6 +2017,7 @@ function getRemitoItemsFull({ from, to, sku, owner } = {}) {
       netoPrenda8q: parseAnalyticsNum_(cellI(rowI, iNeto8q)),
     });
 
+    summary.totalBrutoPrendas += precioUnitario * units;
     summary.totalPrendas += units;
     summary.netoTotalPrendas += netoDisplay * units;
     summary.descuentoTotal += desc * units;

@@ -19,6 +19,7 @@ function units(row: ErpRemitoItemRow): number {
 export function computeRemitoItemsSummary(
   items: ErpRemitoItemRow[]
 ): ErpRemitoItemsSummary {
+  let totalBrutoPrendas = 0;
   let totalPrendas = 0;
   let netoTotalPrendas = 0;
   let descuentoTotal = 0;
@@ -30,6 +31,7 @@ export function computeRemitoItemsSummary(
 
   for (const row of items) {
     const u = units(row);
+    totalBrutoPrendas += row.precioUnitario * u;
     totalPrendas += u;
     netoTotalPrendas += row.netoDisplay * u;
     descuentoTotal += row.descuentoAsignado * u;
@@ -41,6 +43,7 @@ export function computeRemitoItemsSummary(
   }
 
   return {
+    totalBrutoPrendas,
     totalPrendas,
     netoTotalPrendas,
     descuentoTotal,

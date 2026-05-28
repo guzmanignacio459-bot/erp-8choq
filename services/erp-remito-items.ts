@@ -38,6 +38,7 @@ export type FetchErpRemitoItemsResult =
 
 function emptySummary(): ErpRemitoItemsSummary {
   return {
+    totalBrutoPrendas: 0,
     totalPrendas: 0,
     netoTotalPrendas: 0,
     descuentoTotal: 0,
@@ -58,6 +59,7 @@ function mapGasSummary(raw: unknown): ErpRemitoItemsSummary {
     return Number.isFinite(v) ? v : 0;
   };
   return {
+    totalBrutoPrendas: num("totalBrutoPrendas"),
     totalPrendas: num("totalPrendas"),
     netoTotalPrendas: num("netoTotalPrendas"),
     descuentoTotal: num("descuentoTotal"),

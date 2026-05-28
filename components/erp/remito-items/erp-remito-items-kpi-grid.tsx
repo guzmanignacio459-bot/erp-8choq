@@ -5,6 +5,7 @@ import {
   Package,
   Percent,
   Shirt,
+  Tag,
   Truck,
   Wallet,
   type LucideIcon,
@@ -47,11 +48,18 @@ export function ErpRemitoItemsKpiGrid({
     accent: KpiAccent;
   }[] = [
     {
+      label: "Total bruto prendas",
+      value: formatAnalyticsCurrency(summary.totalBrutoPrendas),
+      hint: "Σ Precio Unitario",
+      icon: Tag,
+      accent: "cyan",
+    },
+    {
       label: "Total prendas",
       value: formatAnalyticsCount(summary.totalPrendas),
       hint,
       icon: Package,
-      accent: "cyan",
+      accent: "blue",
     },
     {
       label: "Neto total prendas",

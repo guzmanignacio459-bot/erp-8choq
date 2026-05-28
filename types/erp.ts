@@ -333,6 +333,7 @@ export type ErpRemitoItemRow = {
 };
 
 export type ErpRemitoItemsSummary = {
+  totalBrutoPrendas: number;
   totalPrendas: number;
   netoTotalPrendas: number;
   descuentoTotal: number;
