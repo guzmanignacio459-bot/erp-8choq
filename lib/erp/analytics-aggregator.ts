@@ -3,7 +3,11 @@
  * Solo lectura — no recalcula reglas internas ni netos por prenda.
  */
 
-import { parseRemitoFecha } from "@/lib/erp/remitos-date";
+import {
+  artCalendarDayKey,
+  artRangeBoundsMs,
+  parseArtInstantMs,
+} from "@/lib/erp/art-date";
 import {
   hasMercadoPagoApplied,
   parseRemitoAmount,
@@ -38,29 +42,12 @@ const TOP_PRODUCTS_UNAVAILABLE: ErpAnalyticsTopProductsSection = {
 
 function remitoDateKey(remito: ErpRemito): string | null {
   const raw = remito.fechaRaw || remito.fechaDisplay;
-  const d = parseRemitoFecha(raw);
-  if (!d || Number.isNaN(d.getTime())) return null;
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
+  const ms = parseArtInstantMs(raw);
+  if (ms == null) return null;
+  return artCalendarDayKey(ms);
 }
 
-function startOfDayFromIso(iso: string): Date | null {
-  const d = parseRemitoFecha(iso) ?? new Date(`${iso}T00:00:00`);
-  if (Number.isNaN(d.getTime())) return null;
-  d.setHours(0, 0, 0, 0);
-  return d;
-}
-
-function endOfDayFromIso(iso: string): Date | null {
-  const d = parseRemitoFecha(iso) ?? new Date(`${iso}T23:59:59`);
-  if (Number.isNaN(d.getTime())) return null;
-  d.setHours(23, 59, 59, 999);
-  return d;
-}
-
-/** Filtra remitos por rango ISO YYYY-MM-DD (opcional) */
+/** Filtra remitos por rango calendario ART YYYY-MM-DD (opcional). */
 export function filterRemitosForAnalytics(
   remitos: ErpRemito[],
   from?: string,
@@ -70,17 +57,22 @@ export function filterRemitosForAnalytics(
   const toTrim = to?.trim();
   if (!fromTrim && !toTrim) return remitos;
 
-  const rangeStart = fromTrim ? startOfDayFromIso(fromTrim) : new Date(0);
-  const rangeEnd = toTrim ? endOfDayFromIso(toTrim) : new Date(8640000000000000);
+  const bounds =
+    fromTrim && toTrim
+      ? artRangeBoundsMs(fromTrim, toTrim)
+      : fromTrim
+        ? artRangeBoundsMs(fromTrim, fromTrim)
+        : toTrim
+          ? artRangeBoundsMs(toTrim, toTrim)
+          : null;
 
-  if (!rangeStart || !rangeEnd) return remitos;
+  const rangeStartMs = bounds?.startMs ?? 0;
+  const rangeEndMs = bounds?.endMs ?? 8640000000000000;
 
   return remitos.filter((r) => {
-    const d = parseRemitoFecha(r.fechaRaw || r.fechaDisplay);
-    if (!d) return false;
-    return (
-      d.getTime() >= rangeStart.getTime() && d.getTime() <= rangeEnd.getTime()
-    );
+    const ms = parseArtInstantMs(r.fechaRaw || r.fechaDisplay);
+    if (ms == null) return false;
+    return ms >= rangeStartMs && ms <= rangeEndMs;
   });
 }
 

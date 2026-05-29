@@ -1,4 +1,12 @@
+import {
+  artDefaultRange30d,
+  formatArtDateRangeLabel,
+  isInstantInArtRange,
+  parseArtInstantMs,
+} from "@/lib/erp/art-date";
 import type { ErpRemito } from "@/types/erp";
+
+export { artDefaultRange30d, formatArtDateRangeLabel };
 
 export type PeriodPreset =
   | "today"
@@ -85,6 +93,23 @@ export function compareRemitosByRecency(a: ErpRemito, b: ErpRemito): number {
 
 export function sortRemitosByDateDesc(remitos: ErpRemito[]): ErpRemito[] {
   return [...remitos].sort(compareRemitosByRecency);
+}
+
+/** Filtra remitos por rango calendario ART (YYYY-MM-DD desde type="date"). */
+export function filterRemitosByArtDateRange(
+  remitos: ErpRemito[],
+  fromYmd: string,
+  toYmd: string
+): ErpRemito[] {
+  const from = fromYmd.trim();
+  const to = toYmd.trim();
+  if (!from || !to) return remitos;
+
+  return remitos.filter((r) => {
+    const ms = parseArtInstantMs(remitoFechaSortKey(r));
+    if (ms == null) return false;
+    return isInstantInArtRange(ms, from, to);
+  });
 }
 
 export function filterRemitosByPeriod(

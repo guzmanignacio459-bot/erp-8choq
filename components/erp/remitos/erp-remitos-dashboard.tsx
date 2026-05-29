@@ -21,28 +21,22 @@ import {
   filterRemitosByMetodoPago,
 } from "@/lib/erp/remitos-filters";
 import {
-  DEFAULT_PERIOD_PRESET,
-  filterRemitosByDay,
-  filterRemitosByPeriod,
-  getAppliedPeriodLabel,
+  artDefaultRange30d,
+  filterRemitosByArtDateRange,
+  formatArtDateRangeLabel,
   sortRemitosByDateDesc,
-  type PeriodPreset,
 } from "@/lib/erp/remitos-date";
 import type { ErpRemito, ErpRemitosListResponse } from "@/types/erp";
-
-const PERIOD_OPTIONS: { value: PeriodPreset; label: string }[] = [
-  { value: "today", label: "Hoy" },
-  { value: "yesterday", label: "Ayer" },
-  { value: "7d", label: "Últimos 7 días" },
-  { value: "30d", label: "Últimos 30 días" },
-  { value: "custom", label: "Rango personalizado" },
-  { value: "all", label: "Todos" },
-];
 
 const inputClass =
   "h-10 rounded-lg border border-[hsl(var(--erp-border))] bg-[hsl(var(--erp-bg-card))] px-3 text-sm text-[hsl(var(--erp-fg))] focus:border-[hsl(var(--erp-accent)/0.5)] focus:outline-none focus:ring-1 focus:ring-[hsl(var(--erp-accent)/0.35)]";
 
 const ALL_FILTER = "all";
+
+function isDefaultDateRange(from: string, to: string): boolean {
+  const defaults = artDefaultRange30d();
+  return from === defaults.from && to === defaults.to;
+}
 
 export function ErpRemitosDashboard() {
   const [remitos, setRemitos] = useState<ErpRemito[]>([]);
@@ -52,14 +46,8 @@ export function ErpRemitosDashboard() {
   const [fetchedAt, setFetchedAt] = useState<string | null>(null);
   const [listActionUsed, setListActionUsed] = useState<string | null>(null);
 
-  const [periodPreset, setPeriodPreset] =
-    useState<PeriodPreset>(DEFAULT_PERIOD_PRESET);
-  const [customFrom, setCustomFrom] = useState("");
-  const [customTo, setCustomTo] = useState("");
-  const [dayInput, setDayInput] = useState("");
-  const [activeSpecificDay, setActiveSpecificDay] = useState<string | null>(
-    null
-  );
+  const [dateFrom, setDateFrom] = useState(() => artDefaultRange30d().from);
+  const [dateTo, setDateTo] = useState(() => artDefaultRange30d().to);
   const [estadoFilter, setEstadoFilter] = useState(ALL_FILTER);
   const [metodoFilter, setMetodoFilter] = useState(ALL_FILTER);
 
@@ -99,32 +87,24 @@ export function ErpRemitosDashboard() {
     void loadRemitos("");
   }, [loadRemitos]);
 
-  const periodFiltered = useMemo(() => {
-    let rows = filterRemitosByPeriod(
-      remitos,
-      periodPreset,
-      customFrom,
-      customTo
-    );
-    if (activeSpecificDay) {
-      rows = filterRemitosByDay(rows, activeSpecificDay);
-    }
+  const dateFiltered = useMemo(() => {
+    const rows = filterRemitosByArtDateRange(remitos, dateFrom, dateTo);
     return sortRemitosByDateDesc(rows);
-  }, [remitos, periodPreset, customFrom, customTo, activeSpecificDay]);
+  }, [remitos, dateFrom, dateTo]);
 
   const estadoOptions = useMemo(
-    () => extractUniqueEstados(periodFiltered),
-    [periodFiltered]
+    () => extractUniqueEstados(dateFiltered),
+    [dateFiltered]
   );
 
   const metodoOptions = useMemo(
-    () => extractUniqueMetodosPago(periodFiltered),
-    [periodFiltered]
+    () => extractUniqueMetodosPago(dateFiltered),
+    [dateFiltered]
   );
 
   const estadoFiltered = useMemo(
-    () => filterRemitosByEstado(periodFiltered, estadoFilter),
-    [periodFiltered, estadoFilter]
+    () => filterRemitosByEstado(dateFiltered, estadoFilter),
+    [dateFiltered, estadoFilter]
   );
 
   const metodoFiltered = useMemo(
@@ -164,18 +144,10 @@ export function ErpRemitosDashboard() {
     );
   }, [metodoFiltered, search]);
 
-  const appliedPeriodLabel = getAppliedPeriodLabel({
-    preset: periodPreset,
-    customFrom,
-    customTo,
-    specificDay: activeSpecificDay,
-  });
+  const appliedRangeLabel = formatArtDateRangeLabel(dateFrom, dateTo);
 
   const hasActiveFilters =
-    periodPreset !== DEFAULT_PERIOD_PRESET ||
-    Boolean(activeSpecificDay) ||
-    Boolean(customFrom) ||
-    Boolean(customTo) ||
+    !isDefaultDateRange(dateFrom, dateTo) ||
     estadoFilter !== ALL_FILTER ||
     metodoFilter !== ALL_FILTER ||
     Boolean(search.trim());
@@ -185,28 +157,21 @@ export function ErpRemitosDashboard() {
     void loadRemitos(search);
   };
 
-  const handleApplyDay = () => {
-    if (!dayInput.trim()) return;
-    setActiveSpecificDay(dayInput.trim());
-  };
-
   const handleClearFilters = () => {
-    setPeriodPreset(DEFAULT_PERIOD_PRESET);
-    setCustomFrom("");
-    setCustomTo("");
-    setDayInput("");
-    setActiveSpecificDay(null);
+    const defaults = artDefaultRange30d();
+    setDateFrom(defaults.from);
+    setDateTo(defaults.to);
     setEstadoFilter(ALL_FILTER);
     setMetodoFilter(ALL_FILTER);
     setSearch("");
   };
 
-  const showPeriodEmpty =
+  const showDateEmpty =
     !loading &&
     !error &&
     remitos.length > 0 &&
     filtered.length === 0 &&
-    periodFiltered.length === 0 &&
+    dateFiltered.length === 0 &&
     !search.trim();
 
   const showFilterEmpty =
@@ -214,7 +179,7 @@ export function ErpRemitosDashboard() {
     !error &&
     remitos.length > 0 &&
     filtered.length === 0 &&
-    periodFiltered.length > 0 &&
+    dateFiltered.length > 0 &&
     !search.trim();
 
   const showSearchEmpty =
@@ -222,7 +187,7 @@ export function ErpRemitosDashboard() {
     !error &&
     remitos.length > 0 &&
     filtered.length === 0 &&
-    periodFiltered.length > 0 &&
+    dateFiltered.length > 0 &&
     Boolean(search.trim());
 
   const dataSourceLabel =
@@ -277,7 +242,7 @@ export function ErpRemitosDashboard() {
       {!loading && !error && remitos.length > 0 && (
         <ErpRemitosKpiGrid
           remitos={filtered}
-          periodLabel={appliedPeriodLabel}
+          periodLabel={appliedRangeLabel}
         />
       )}
 
@@ -287,31 +252,7 @@ export function ErpRemitosDashboard() {
           Filtros
         </div>
 
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 xl:grid-cols-4">
-          <div className="space-y-2">
-            <label
-              htmlFor="period-preset"
-              className="text-[11px] font-medium uppercase tracking-wider text-[hsl(var(--erp-fg-subtle))]"
-            >
-              Período
-            </label>
-            <select
-              id="period-preset"
-              value={periodPreset}
-              onChange={(e) => {
-                setPeriodPreset(e.target.value as PeriodPreset);
-                setActiveSpecificDay(null);
-              }}
-              className={`${inputClass} w-full`}
-            >
-              {PERIOD_OPTIONS.map((opt) => (
-                <option key={opt.value} value={opt.value}>
-                  {opt.label}
-                </option>
-              ))}
-            </select>
-          </div>
-
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
           <div className="space-y-2">
             <label
               htmlFor="estado-filter"
@@ -358,66 +299,36 @@ export function ErpRemitosDashboard() {
 
           <div className="space-y-2">
             <label
-              htmlFor="day-filter"
+              htmlFor="date-from"
               className="text-[11px] font-medium uppercase tracking-wider text-[hsl(var(--erp-fg-subtle))]"
             >
-              Día específico
+              Desde
             </label>
-            <div className="flex gap-2">
-              <input
-                id="day-filter"
-                type="date"
-                value={dayInput}
-                onChange={(e) => setDayInput(e.target.value)}
-                className={`${inputClass} min-w-0 flex-1`}
-              />
-              <button
-                type="button"
-                onClick={handleApplyDay}
-                disabled={!dayInput.trim()}
-                className="inline-flex h-10 shrink-0 items-center gap-1.5 rounded-lg border border-[hsl(var(--erp-accent)/0.35)] bg-[hsl(var(--erp-accent)/0.12)] px-3 text-xs font-medium text-[hsl(var(--erp-fg))] transition-colors hover:bg-[hsl(var(--erp-accent)/0.2)] disabled:opacity-50"
-              >
-                <Calendar className="h-3.5 w-3.5" />
-                Ver
-              </button>
-            </div>
+            <input
+              id="date-from"
+              type="date"
+              value={dateFrom}
+              onChange={(e) => setDateFrom(e.target.value)}
+              className={`${inputClass} w-full`}
+            />
+          </div>
+
+          <div className="space-y-2">
+            <label
+              htmlFor="date-to"
+              className="text-[11px] font-medium uppercase tracking-wider text-[hsl(var(--erp-fg-subtle))]"
+            >
+              Hasta
+            </label>
+            <input
+              id="date-to"
+              type="date"
+              value={dateTo}
+              onChange={(e) => setDateTo(e.target.value)}
+              className={`${inputClass} w-full`}
+            />
           </div>
         </div>
-
-        {periodPreset === "custom" && (
-          <div className="flex flex-wrap items-end gap-3 border-t border-[hsl(var(--erp-border-subtle))] pt-4">
-            <div className="space-y-2">
-              <label
-                htmlFor="custom-from"
-                className="text-[11px] font-medium uppercase tracking-wider text-[hsl(var(--erp-fg-subtle))]"
-              >
-                Desde
-              </label>
-              <input
-                id="custom-from"
-                type="date"
-                value={customFrom}
-                onChange={(e) => setCustomFrom(e.target.value)}
-                className={inputClass}
-              />
-            </div>
-            <div className="space-y-2">
-              <label
-                htmlFor="custom-to"
-                className="text-[11px] font-medium uppercase tracking-wider text-[hsl(var(--erp-fg-subtle))]"
-              >
-                Hasta
-              </label>
-              <input
-                id="custom-to"
-                type="date"
-                value={customTo}
-                onChange={(e) => setCustomTo(e.target.value)}
-                className={inputClass}
-              />
-            </div>
-          </div>
-        )}
 
         {!loading && !error && remitos.length > 0 && (
           <div className="flex flex-col gap-3 border-t border-[hsl(var(--erp-border-subtle))] pt-4 sm:flex-row sm:items-center sm:justify-between">
@@ -427,11 +338,9 @@ export function ErpRemitosDashboard() {
               </span>{" "}
               remitos visibles
               <span className="mx-2 text-[hsl(var(--erp-fg-subtle))]">·</span>
-              <span className="text-[hsl(var(--erp-fg-subtle))]">
-                Período:{" "}
-              </span>
+              <span className="text-[hsl(var(--erp-fg-subtle))]">Rango: </span>
               <span className="font-medium text-[hsl(var(--erp-accent))]">
-                {appliedPeriodLabel}
+                {appliedRangeLabel}
               </span>
               {remitos.length !== filtered.length && (
                 <span className="ml-1 text-[hsl(var(--erp-fg-subtle))]">
@@ -513,15 +422,15 @@ export function ErpRemitosDashboard() {
         </div>
       )}
 
-      {showPeriodEmpty && (
+      {showDateEmpty && (
         <div className="erp-card flex flex-col items-center gap-3 py-12 text-center">
           <Calendar className="h-10 w-10 text-[hsl(var(--erp-fg-subtle))]" />
           <div>
             <p className="text-sm font-medium text-[hsl(var(--erp-fg))]">
-              No hay remitos en este período
+              No hay remitos en este rango
             </p>
             <p className="mt-1 text-xs text-[hsl(var(--erp-fg-muted))]">
-              Período aplicado: {appliedPeriodLabel}. Probá ampliar el rango o
+              Rango aplicado: {appliedRangeLabel}. Probá ampliar las fechas o
               limpiar filtros.
             </p>
           </div>
@@ -535,7 +444,7 @@ export function ErpRemitosDashboard() {
         </div>
       )}
 
-      {showFilterEmpty && !showPeriodEmpty && (
+      {showFilterEmpty && !showDateEmpty && (
         <div className="erp-card flex flex-col items-center gap-2 py-12 text-center">
           <Filter className="h-10 w-10 text-[hsl(var(--erp-fg-subtle))]" />
           <p className="text-sm font-medium text-[hsl(var(--erp-fg))]">
@@ -547,7 +456,7 @@ export function ErpRemitosDashboard() {
         </div>
       )}
 
-      {showSearchEmpty && !showPeriodEmpty && !showFilterEmpty && (
+      {showSearchEmpty && !showDateEmpty && !showFilterEmpty && (
         <div className="erp-card flex flex-col items-center gap-2 py-12 text-center">
           <p className="text-sm font-medium text-[hsl(var(--erp-fg))]">
             Sin resultados para la búsqueda

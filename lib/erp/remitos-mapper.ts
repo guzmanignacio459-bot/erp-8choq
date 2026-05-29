@@ -3,7 +3,7 @@
  * Solo lectura — no recalcula montos ni netos.
  */
 
-import { parseRemitoFecha } from "@/lib/erp/remitos-date";
+import { formatInstantArt, parseArtInstantMs } from "@/lib/erp/art-date";
 import type { ErpRemito } from "@/types/erp";
 
 /** Slug de header: sin acentos, solo alfanumérico */
@@ -156,20 +156,11 @@ export function formatRemitoFechaDisplay(raw: string): string {
   const trimmed = raw.trim();
   if (!trimmed) return "";
 
-  const d = parseRemitoFecha(trimmed) ?? (() => {
-    const t = Date.parse(trimmed);
-    return Number.isNaN(t) ? null : new Date(t);
-  })();
+  if (parseArtInstantMs(trimmed) != null) {
+    return formatInstantArt(trimmed);
+  }
 
-  if (!d || Number.isNaN(d.getTime())) return trimmed;
-
-  const dd = String(d.getDate()).padStart(2, "0");
-  const mm = String(d.getMonth() + 1).padStart(2, "0");
-  const yyyy = d.getFullYear();
-  const hh = String(d.getHours()).padStart(2, "0");
-  const min = String(d.getMinutes()).padStart(2, "0");
-
-  return `${dd}/${mm}/${yyyy} ${hh}:${min}`;
+  return trimmed;
 }
 
 function buildProvinciaLocalidad(row: Record<string, unknown>): string {
