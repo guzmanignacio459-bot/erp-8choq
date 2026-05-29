@@ -776,6 +776,25 @@ async function tnFetch(
 async function tnFetchOrderDetail(orderId: string | number) {
   return tnFetch(`/orders/${encodeURIComponent(String(orderId))}`);
 }
+
+function buildTnOrdersListPath(params: {
+  page: number;
+  perPage: number;
+  fromISO: string;
+  toISO: string;
+}): string {
+  const q = new URLSearchParams();
+  q.set("page", String(params.page));
+  q.set("per_page", String(params.perPage));
+  q.set("payment_status", "paid");
+  q.set("created_at_min", params.fromISO.trim());
+  q.set("created_at_max", params.toISO.trim());
+  return `/orders?${q.toString()}`;
+}
+
+function isTnListPaginationEnd(status: number, text: string): boolean {
+  return status === 404 && /Last page is \d+/.test(text || "");
+}
 async function withRetry<T>(fn: () => Promise<T>, opts?: { retries?: number; baseMs?: number }) {
   const retries = opts?.retries ?? 2;
   const baseMs = opts?.baseMs ?? 500;
@@ -1525,9 +1544,11 @@ export async function POST(req: Request) {
   let page = 1;
 
   while (page <= maxPages) {
-    const list = await tnFetch(`/orders?page=${page}&per_page=${perPage}`);
+    const list = await tnFetch(
+      buildTnOrdersListPath({ page, perPage, fromISO, toISO })
+    );
 
-    if (!list.ok && list.status === 404 && (list.text || "").includes("Last page is 0")) break;
+    if (!list.ok && isTnListPaginationEnd(list.status, list.text || "")) break;
 
     if (!list.ok) {
       errors.push({ step: "tn_list_orders", message: `status=${list.status} body=${list.text}` });
