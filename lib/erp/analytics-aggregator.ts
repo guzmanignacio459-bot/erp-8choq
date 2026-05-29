@@ -40,11 +40,21 @@ const TOP_PRODUCTS_UNAVAILABLE: ErpAnalyticsTopProductsSection = {
     "Top productos requiere getAnalyticsSummary (REMITO_ITEMS). Disponible tras deploy GAS.",
 };
 
+/** Instant de columna Fecha (ISO) — nunca fechaDisplay de presentación. */
+function remitoInstantMs(remito: ErpRemito): number | null {
+  const raw = remito.fechaRaw?.trim();
+  if (!raw) return null;
+  return parseArtInstantMs(raw);
+}
+
 function remitoDateKey(remito: ErpRemito): string | null {
-  const raw = remito.fechaRaw || remito.fechaDisplay;
-  const ms = parseArtInstantMs(raw);
+  const ms = remitoInstantMs(remito);
   if (ms == null) return null;
-  return artCalendarDayKey(ms);
+  try {
+    return artCalendarDayKey(ms);
+  } catch {
+    return null;
+  }
 }
 
 /** Filtra remitos por rango calendario ART YYYY-MM-DD (opcional). */
@@ -66,11 +76,12 @@ export function filterRemitosForAnalytics(
           ? artRangeBoundsMs(toTrim, toTrim)
           : null;
 
-  const rangeStartMs = bounds?.startMs ?? 0;
-  const rangeEndMs = bounds?.endMs ?? 8640000000000000;
+  if (!bounds) return [];
+
+  const { startMs: rangeStartMs, endMs: rangeEndMs } = bounds;
 
   return remitos.filter((r) => {
-    const ms = parseArtInstantMs(r.fechaRaw || r.fechaDisplay);
+    const ms = remitoInstantMs(r);
     if (ms == null) return false;
     return ms >= rangeStartMs && ms <= rangeEndMs;
   });

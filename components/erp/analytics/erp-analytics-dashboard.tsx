@@ -152,7 +152,22 @@ export function ErpAnalyticsDashboard() {
 
       const url = `/api/erp/analytics${params.toString() ? `?${params}` : ""}`;
       const res = await fetch(url, { cache: "no-store" });
-      const json = (await res.json()) as ErpAnalyticsResponse;
+      const bodyText = await res.text();
+
+      let json: ErpAnalyticsResponse;
+      try {
+        json = JSON.parse(bodyText) as ErpAnalyticsResponse;
+      } catch {
+        setSummary(null);
+        setError(
+          `Respuesta inválida del servidor (HTTP ${res.status}). ${
+            bodyText.trim().startsWith("<")
+              ? "Se recibió HTML en lugar de JSON."
+              : bodyText.slice(0, 120)
+          }`
+        );
+        return;
+      }
 
       if (!json.ok || !json.data) {
         setSummary(null);
