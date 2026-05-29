@@ -9,7 +9,8 @@ import type { ErpRemitoItemsPayload, ErpRemitoItemsSummary } from "@/types/erp";
 
 const GAS_URL = (process.env.APPS_SCRIPT_URL ?? "").trim();
 const GAS_TOKEN = (process.env.APPS_SCRIPT_TOKEN ?? "").trim();
-const FETCH_TIMEOUT_MS = 45_000;
+/** GAS escanea REMITO_ITEMS completo si prod no filtra por fecha — margen bajo maxDuration 60s */
+const FETCH_TIMEOUT_MS = 58_000;
 
 const GAS_ACTION = "getRemitoItemsFull";
 
@@ -29,11 +30,15 @@ export type FetchErpRemitoItemsResult =
       data: ErpRemitoItemsPayload;
       gasActionUsed: string;
       attemptedActions: string[];
+      elapsedMs: number;
+      gasRowsInScope?: number;
     }
   | {
       ok: false;
       error: string;
       attemptedActions: string[];
+      elapsedMs?: number;
+      gasHttpStatus?: number;
     };
 
 function emptySummary(): ErpRemitoItemsSummary {
@@ -96,7 +101,9 @@ async function callGasRemitoItemsFull(
   payload: GasPayload;
   error?: string;
   httpStatus: number;
+  elapsedMs: number;
 }> {
+  const started = Date.now();
   const res = await fetch(GAS_URL, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -104,6 +111,7 @@ async function callGasRemitoItemsFull(
     signal,
     body: JSON.stringify({
       action: GAS_ACTION,
+      method: GAS_ACTION,
       from: params.from || undefined,
       to: params.to || undefined,
       sku: params.sku || undefined,
@@ -112,6 +120,7 @@ async function callGasRemitoItemsFull(
     }),
   });
 
+  const elapsedMs = Date.now() - started;
   const text = await res.text();
   let payload: GasPayload = {};
   try {
@@ -122,6 +131,7 @@ async function callGasRemitoItemsFull(
       payload: {},
       error: `Respuesta no JSON: ${text.slice(0, 200)}`,
       httpStatus: res.status,
+      elapsedMs,
     };
   }
 
@@ -134,6 +144,7 @@ async function callGasRemitoItemsFull(
       ? undefined
       : String(payload.error ?? `HTTP ${res.status}`),
     httpStatus: res.status,
+    elapsedMs,
   };
 }
 
@@ -169,6 +180,7 @@ export async function fetchErpRemitoItems(options?: {
 
   try {
     attemptedActions.push(GAS_ACTION);
+    const requestStarted = Date.now();
     const gasResult = await callGasRemitoItemsFull(
       {
         from: options?.from,
@@ -180,15 +192,29 @@ export async function fetchErpRemitoItems(options?: {
     );
 
     clearTimeout(timeoutId);
+    const totalElapsedMs = Date.now() - requestStarted;
 
     if (!gasResult.ok) {
       const msg = gasResult.error ?? "getRemitoItemsFull falló";
+      console.warn("[erp/remito-items] GAS fail", {
+        action: GAS_ACTION,
+        from: options?.from ?? null,
+        to: options?.to ?? null,
+        sku: options?.sku ? "(set)" : null,
+        owner: options?.owner ?? null,
+        gasHttpStatus: gasResult.httpStatus,
+        gasElapsedMs: gasResult.elapsedMs,
+        totalElapsedMs,
+        error: msg.slice(0, 200),
+      });
       return {
         ok: false,
         error: isUnknownGasActionError(msg)
           ? `${msg} (requiere redeploy GAS con getRemitoItemsFull)`
           : msg,
         attemptedActions,
+        elapsedMs: totalElapsedMs,
+        gasHttpStatus: gasResult.httpStatus,
       };
     }
 
@@ -196,19 +222,37 @@ export async function fetchErpRemitoItems(options?: {
     const summary = mapGasSummary(gasResult.payload.data?.summary);
 
     const log = gasResult.payload.data?._log;
-    if (log && typeof log === "object") {
-      console.log("[erp/remito-items] GAS", log);
-    }
+    const rowsInScope =
+      typeof summary.rowsInScope === "number" ? summary.rowsInScope : undefined;
+
+    console.log("[erp/remito-items] GAS ok", {
+      action: GAS_ACTION,
+      from: options?.from ?? null,
+      to: options?.to ?? null,
+      gasElapsedMs: gasResult.elapsedMs,
+      totalElapsedMs,
+      itemsMapped: items.length,
+      rowsInScope: rowsInScope ?? null,
+      gasLog: log ?? null,
+    });
 
     return {
       ok: true,
       data: { items, summary },
       gasActionUsed: GAS_ACTION,
       attemptedActions,
+      elapsedMs: totalElapsedMs,
+      gasRowsInScope: rowsInScope,
     };
   } catch (err: unknown) {
     clearTimeout(timeoutId);
     if (err instanceof Error && err.name === "AbortError") {
+      console.warn("[erp/remito-items] timeout", {
+        action: GAS_ACTION,
+        from: options?.from ?? null,
+        to: options?.to ?? null,
+        timeoutMs: FETCH_TIMEOUT_MS,
+      });
       return {
         ok: false,
         error: "Timeout consultando REMITO_ITEMS.",

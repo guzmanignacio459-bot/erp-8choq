@@ -22,6 +22,7 @@ function json(body: Record<string, unknown>, status = 200): NextResponse {
  * Query: from, to, sku, owner (8Q | SCNL)
  */
 export async function GET(req: Request) {
+  const started = Date.now();
   const { searchParams } = new URL(req.url);
   const from = searchParams.get("from") ?? undefined;
   const to = searchParams.get("to") ?? undefined;
@@ -30,8 +31,10 @@ export async function GET(req: Request) {
 
   const result = await fetchErpRemitoItems({ from, to, sku, owner });
   const fetchedAt = new Date().toISOString();
+  const routeElapsedMs = Date.now() - started;
 
   if (!result.ok) {
+    const isTimeout = result.error.includes("Timeout");
     return json(
       {
         ok: false,
@@ -40,6 +43,11 @@ export async function GET(req: Request) {
         source: "apps-script",
         error: result.error,
         attemptedActions: result.attemptedActions,
+        elapsedMs: result.elapsedMs ?? routeElapsedMs,
+        gasHttpStatus: result.gasHttpStatus,
+        hint: isTimeout
+          ? "GAS devolvió REMITO_ITEMS completo (~25s+). Redeploy GAS con filtros from/to o acotar período."
+          : undefined,
       },
       result.error.includes("configurada") ? 500 : 502
     );
@@ -52,5 +60,12 @@ export async function GET(req: Request) {
     source: "apps-script",
     gasActionUsed: result.gasActionUsed,
     attemptedActions: result.attemptedActions,
+    elapsedMs: result.elapsedMs ?? routeElapsedMs,
+    meta: {
+      itemsCount: result.data.items.length,
+      rowsInScope: result.gasRowsInScope ?? result.data.summary.rowsInScope,
+      from: from ?? null,
+      to: to ?? null,
+    },
   });
 }
