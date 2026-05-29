@@ -180,6 +180,93 @@ export type ErpMpApplyResponse = ErpMpApplyResult & {
   source: "erp-wrapper";
 };
 
+/** POST /api/erp/orders/import — delegación a import-orders (Fase 5) */
+
+export type ErpOrdersImportPreset =
+  | "today"
+  | "yesterday"
+  | "singleDay"
+  | "custom";
+
+export type ErpOrdersImportRequestBody = {
+  preset?: ErpOrdersImportPreset;
+  /** YYYY-MM-DD — preset singleDay */
+  date?: string;
+  /** YYYY-MM-DD — preset custom */
+  from?: string;
+  to?: string;
+  fromISO?: string;
+  toISO?: string;
+  singleOrderId?: string | number;
+  dryRun?: boolean;
+  importMp?: boolean;
+  mpForce?: boolean;
+  fetchDetails?: boolean;
+  perPage?: number;
+  maxPages?: number;
+  throttleMs?: number;
+  useHourlySlots?: boolean;
+  /** Horas por franja (default 6) */
+  slotHours?: number;
+};
+
+export type ErpOrdersImportErrorRow = {
+  orderId?: string;
+  step: string;
+  message: string;
+};
+
+export type ErpOrdersImportMetrics = {
+  imported: number;
+  duplicated: number;
+  skipped: number;
+  consideredPaid: number;
+  consideredInRange: number;
+  wouldImport: number;
+  errorsCount: number;
+};
+
+export type ErpOrdersImportSlotResult = {
+  label: string;
+  fromISO: string;
+  toISO: string;
+  ok: boolean;
+  elapsedMs: number;
+  metrics: ErpOrdersImportMetrics;
+  errors: ErpOrdersImportErrorRow[];
+  error?: string;
+};
+
+export type ErpOrdersImportResult = {
+  ok: boolean;
+  elapsedMs: number;
+  mode: "batch" | "single_order" | "hourly_slots";
+  input: {
+    fromISO: string;
+    toISO: string;
+    dryRun: boolean;
+    importMp: boolean;
+    mpForce: boolean;
+    singleOrderId?: string;
+    fetchDetails?: boolean;
+    perPage?: number;
+    maxPages?: number;
+    throttleMs?: number;
+  };
+  metrics: ErpOrdersImportMetrics;
+  errors: ErpOrdersImportErrorRow[];
+  slots?: ErpOrdersImportSlotResult[];
+  raw: unknown;
+  error?: string;
+  httpStatus?: number;
+  message?: string;
+};
+
+export type ErpOrdersImportResponse = ErpOrdersImportResult & {
+  fetchedAt: string;
+  source: "erp-wrapper";
+};
+
 export type ErpRemitosDataShape = "full" | "summary" | "unknown";
 
 export type ErpRemitosGasAttemptError = {

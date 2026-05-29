@@ -30,6 +30,12 @@ export const ERP_NAV_SECTIONS: ErpNavSection[] = [
     title: "Operaciones",
     items: [
       {
+        id: "importaciones",
+        label: "Importaciones",
+        href: "/dashboard/importaciones",
+        icon: "download",
+      },
+      {
         id: "remitos-erp",
         label: "Remitos",
         href: "/dashboard/remitos",

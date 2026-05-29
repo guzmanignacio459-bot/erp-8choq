@@ -6,6 +6,7 @@ import {
   BarChart3,
   Box,
   CreditCard,
+  Download,
   FileText,
   Files,
   LayoutDashboard,
@@ -31,6 +32,7 @@ const ICON_MAP: Record<string, LucideIcon> = {
   package: Package,
   "file-text": FileText,
   "credit-card": CreditCard,
+  download: Download,
   users: Users,
   settings: Settings,
 };
