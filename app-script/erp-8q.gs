@@ -787,8 +787,8 @@ function fromCents_(c) {
  * Si el cliente pagó envío, forzar 0 en todos los ítems.
  */
 function applyRemitoItemsShippingAlloc_(expanded, shippingCustomerCost, shippingOwnerCost) {
-  const scc = num(shippingCustomerCost, 0);
-  const soc = num(shippingOwnerCost, 0);
+  const scc = toNumber_(shippingCustomerCost);
+  const soc = toNumber_(shippingOwnerCost);
   const pool = scc > 0 ? 0 : (soc > 0 ? soc : 0);
 
   if (pool <= 0) {
@@ -797,7 +797,7 @@ function applyRemitoItemsShippingAlloc_(expanded, shippingCustomerCost, shipping
   }
 
   const weights = expanded.map(function (it) {
-    return Math.max(0, num(it.precioUnitario, 0));
+    return Math.max(0, toNumber_(it.precioUnitario));
   });
   const shipCents = allocateProportionalCents_(pool, weights);
   for (var i = 0; i < expanded.length; i++) {
@@ -807,9 +807,9 @@ function applyRemitoItemsShippingAlloc_(expanded, shippingCustomerCost, shipping
 
 /** NETO_PRENDA = prenda neta; envío va solo en SHIPPING_ASIGNADO. */
 function recomputeNetoUnitarioFromAllocs_(it) {
-  const precio = num(it.precioUnitario, 0);
-  const desc = num(it.descuentoAsignado, 0);
-  const fee = num(it.feeAsignado, 0);
+  const precio = toNumber_(it.precioUnitario);
+  const desc = toNumber_(it.descuentoAsignado);
+  const fee = toNumber_(it.feeAsignado);
   it.netoUnitario = precio - desc - fee;
 }
 
