@@ -377,10 +377,12 @@ function round2(n: number): number {
 function assignProportionalNetos(params: {
   items: RemitoItemBase[];
   descuentoTotalAbs: number;  // + (positivo)
-  shippingPaid: number;       // + (cliente, puede ser 0)
+  /** Solo envío absorbido por 8Q; 0 si el cliente pagó (monto cliente va solo a cabecera REMITOS). */
+  shippingOwnerCostForItems: number;
   feeTotal: number;           // + (por ahora 0)
 }): RemitoItemAllocated[] {
-  const { items, descuentoTotalAbs, shippingPaid, feeTotal } = params;
+  const { items, descuentoTotalAbs, shippingOwnerCostForItems, feeTotal } = params;
+  const shippingPool = Math.max(0, Number(shippingOwnerCostForItems) || 0);
 
   const baseSum = items.reduce((acc, it) => acc + (Number(it.precioUnitario) || 0), 0);
 
@@ -404,12 +406,12 @@ function assignProportionalNetos(params: {
     const share = price / baseSum;
 
     let disc = round2(descuentoTotalAbs * share);
-    let ship = round2(shippingPaid * share);
+    let ship = round2(shippingPool * share);
     let fee  = round2(feeTotal * share);
 
     if (idx === items.length - 1) {
       disc = round2(descuentoTotalAbs - discAcc);
-      ship = round2(shippingPaid - shipAcc);
+      ship = round2(shippingPool - shipAcc);
       fee  = round2(feeTotal - feeAcc);
     } else {
       discAcc += disc;
@@ -417,12 +419,12 @@ function assignProportionalNetos(params: {
       feeAcc  += fee;
     }
 
-    const neto = round2(price - disc + ship + fee);
+    const neto = round2(price - disc + fee);
 
     return {
       ...it,
       descuentoAsignado: disc,   // positivo (lo restás en neto)
-      shippingAsignado: ship,    // positivo
+      shippingAsignado: ship,    // solo costo absorbido 8Q
       feeAsignado: fee,          // positivo
       netoUnitario: neto,
     };
@@ -432,18 +434,19 @@ function assignProportionalNetos(params: {
 /**
  * ✅ Asigna proporcionalmente (sin “prenda regalada”):
  * - descuentoAsignado: parte del descuento global
- * - shippingAsignado: parte del envío cobrado al cliente
+ * - shippingAsignado: parte del envío absorbido por 8Q (0 si pagó el cliente)
  * - feeAsignado: parte de fees (por ahora 0)
- * - netoUnitario: precio - descuento + shipping + fee
+ * - netoUnitario: precio - descuento + fee (sin envío en neto)
  *
  * Ajusta en el último ítem para que cierre exacto.
  */
 function allocateProportional(
   items: RemitoItemBase[],
   totalDiscountAbs: number, // positivo
-  shippingPaid: number, // >=0
+  shippingOwnerCostForItems: number, // >=0, solo pool 8Q
   feeTotal: number // >=0
 ): RemitoItemAllocated[] {
+  const shippingPool = Math.max(0, Number(shippingOwnerCostForItems) || 0);
   const base = items.map((it) => Math.max(0, Number(it.precioUnitario) || 0));
   const sumBase = base.reduce((a, b) => a + b, 0);
 
@@ -469,12 +472,12 @@ function allocateProportional(
     const w = precio / sumBase;
 
     let disc = round2(totalDiscountAbs * w);
-    let ship = round2(shippingPaid * w);
+    let ship = round2(shippingPool * w);
     let fee = round2(feeTotal * w);
 
     if (idx === items.length - 1) {
       disc = round2(totalDiscountAbs - accDisc);
-      ship = round2(shippingPaid - accShip);
+      ship = round2(shippingPool - accShip);
       fee = round2(feeTotal - accFee);
     } else {
       accDisc += disc;
@@ -482,7 +485,7 @@ function allocateProportional(
       accFee += fee;
     }
 
-    const netoUnitario = round2(precio - disc + ship + fee);
+    const netoUnitario = round2(precio - disc + fee);
 
     return {
       ...it,
@@ -507,7 +510,7 @@ function allocateProportional(
 // - getShippingName
 // - getPaymentMethod
 // - expandOrderItemsToUnitRows
-// - allocateProportional(rawItems, descuentoTotalAbs, shippingPaid, feeTotal)
+// - allocateProportional(rawItems, descuentoTotalAbs, shippingOwnerCostForItems, feeTotal)
 // - type RemitoItemAllocated
 //
 function buildRemitoPayload(order: any): { data: any; itemErrors: string[] } {
@@ -546,6 +549,7 @@ function buildRemitoPayload(order: any): { data: any; itemErrors: string[] } {
   const shippingPaid      = getShippingPaid(order);        // cliente (0 si gratis)
   const shippingOwnerCost = getShippingOwnerCost(order);   // lo que paga 8Q si aplica
   const costoEnvioOwner   = shippingPaid > 0 ? 0 : (shippingOwnerCost > 0 ? shippingOwnerCost : 0);
+  const shippingOwnerCostForItems = costoEnvioOwner;
 
   const feeTotal = 0;
 
@@ -565,7 +569,7 @@ function buildRemitoPayload(order: any): { data: any; itemErrors: string[] } {
   const items: RemitoItemAllocated[] = assignProportionalNetos({
     items: rawItems,
     descuentoTotalAbs,
-    shippingPaid,
+    shippingOwnerCostForItems,
     feeTotal,
   });
 
@@ -591,6 +595,7 @@ function buildRemitoPayload(order: any): { data: any; itemErrors: string[] } {
     costoEnvioOwner,
     envioOwner,
     shippingOwnerCost,
+    shippingCustomerCost: shippingPaid,
 
     // ✅ totales.* (si GAS lo usa, mejor)
     totales: {

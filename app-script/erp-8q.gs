@@ -778,6 +778,41 @@ function toNumber_(v) {
   return Number(clean) || 0;
 }
 
+function fromCents_(c) {
+  return (Number(c || 0) / 100);
+}
+
+/**
+ * REMITO_ITEMS: SHIPPING_ASIGNADO solo si 8Q absorbió (cabecera Shipping Owner Cost).
+ * Si el cliente pagó envío, forzar 0 en todos los ítems.
+ */
+function applyRemitoItemsShippingAlloc_(expanded, shippingCustomerCost, shippingOwnerCost) {
+  const scc = num(shippingCustomerCost, 0);
+  const soc = num(shippingOwnerCost, 0);
+  const pool = scc > 0 ? 0 : (soc > 0 ? soc : 0);
+
+  if (pool <= 0) {
+    expanded.forEach(function (it) { it.shippingAsignado = 0; });
+    return;
+  }
+
+  const weights = expanded.map(function (it) {
+    return Math.max(0, num(it.precioUnitario, 0));
+  });
+  const shipCents = allocateProportionalCents_(pool, weights);
+  for (var i = 0; i < expanded.length; i++) {
+    expanded[i].shippingAsignado = fromCents_(shipCents[i]);
+  }
+}
+
+/** NETO_PRENDA = prenda neta; envío va solo en SHIPPING_ASIGNADO. */
+function recomputeNetoUnitarioFromAllocs_(it) {
+  const precio = num(it.precioUnitario, 0);
+  const desc = num(it.descuentoAsignado, 0);
+  const fee = num(it.feeAsignado, 0);
+  it.netoUnitario = precio - desc - fee;
+}
+
 function expandItemLines_(raw) {
   const sizes = ['S','M','L','XL','XXL','XXXL'];
   const out = [];
@@ -1044,10 +1079,9 @@ if (shippingOwnerCost > 0) {
   // - Preferimos lo que viene desde Next
   // - Si no viniera, fallback a computeNetosProporcionales_
   // -------------------------
-  const hasAllocFromNext = expanded.some((it) => {
+  const hasDiscountOrNetoFromNext = expanded.some((it) => {
     return (
       num(it.descuentoAsignado, 0) !== 0 ||
-      num(it.shippingAsignado, 0) !== 0 ||
       num(it.feeAsignado, 0) !== 0 ||
       num(it.netoUnitario, 0) !== 0
     );
@@ -1065,9 +1099,9 @@ const normalizeDiscountAsignado_ = (x) => {
   return v < 0 ? Math.abs(v) : v;
 };
 
-  if (!hasAllocFromNext) {
-    const calc = computeNetosProporcionales_(expanded, subtotal, costoEnvioCliente, totalFinal, {
-   costoEnvioOwner,
+  if (!hasDiscountOrNetoFromNext) {
+    const calc = computeNetosProporcionales_(expanded, subtotal, shippingCustomerCost, totalFinal, {
+   costoEnvioOwner: shippingOwnerCost,
    feeTotal: 0
    });
 
@@ -1092,14 +1126,16 @@ const normalizeDiscountAsignado_ = (x) => {
       it.netoUnitario      = num(net.netoUnit || net.precioNetoUnit || 0);
     }
   } else {
-    // Normal: ya viene calculado desde Next.js
+    // Descuentos/netos desde Next.js; shipping en ítems se normaliza abajo desde cabecera.
     for (const it of expanded) {
       it.descuentoAsignado = normalizeDiscountAsignado_(it.descuentoAsignado || 0);
-      it.shippingAsignado  = num(it.shippingAsignado || 0);
       it.feeAsignado       = num(it.feeAsignado || 0);
       it.netoUnitario      = num(it.netoUnitario || it.netoPrenda || 0);
     }
   }
+
+  applyRemitoItemsShippingAlloc_(expanded, shippingCustomerCost, shippingOwnerCost);
+  expanded.forEach(recomputeNetoUnitarioFromAllocs_);
 
   // -------------------------
   // Stock: descontar SOLO si Pagado
@@ -1342,10 +1378,9 @@ function computeNetosProporcionales_(expanded, subtotal, costoEnvioCliente, tota
       const shippingUnit  = fromCents(shipAbsCents[idx]); // costo absorbido por la marca
       const feeUnit       = fromCents(feeCents[idx]);
 
-      // Neto por prenda:
-      // neto = precio - descuento - shippingAbsorbido - fee
-      // Nota: si poolDescuento es negativo (recargo), descuentoUnit será negativo y neto sube (correcto).
-      const netoUnit = (precio - descuentoUnit - shippingUnit - feeUnit);
+      // Neto por prenda (envío absorbido solo en shippingUnit / SHIPPING_ASIGNADO):
+      // neto = precio - descuento - fee
+      const netoUnit = (precio - descuentoUnit - feeUnit);
 
       return {
         precioUnit: precio,
@@ -1586,52 +1621,62 @@ function parseAnalyticsInt_(value) {
   return isFinite(n) ? n : 0;
 }
 
+var ANALYTICS_CAL_TZ = 'America/Argentina/Buenos_Aires';
+
+/** YYYY-MM-DD de filtro UI — sin Date.parse UTC. */
+function parseAnalyticsCalendarDayKey_(str) {
+  var s = String(str || '').trim();
+  var m = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return null;
+  return m[1] + '-' + m[2] + '-' + m[3];
+}
+
 function parseAnalyticsDate_(value) {
   if (value instanceof Date && !isNaN(value.getTime())) return new Date(value.getTime());
-  const s = String(value || '').trim();
+  var s = String(value || '').trim();
   if (!s) return null;
-  const d = new Date(s);
-  if (!isNaN(d.getTime())) return d;
-  const m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
+
+  var isoDay = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (isoDay) {
+    var outDay = new Date(Number(isoDay[1]), Number(isoDay[2]) - 1, Number(isoDay[3]));
+    return isNaN(outDay.getTime()) ? null : outDay;
+  }
+
+  var m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
   if (m) {
-    let y = Number(m[3]);
+    var y = Number(m[3]);
     if (y < 100) y += 2000;
-    const out = new Date(y, Number(m[2]) - 1, Number(m[1]));
-    return isNaN(out.getTime()) ? null : out;
+    var outSlash = new Date(y, Number(m[2]) - 1, Number(m[1]));
+    return isNaN(outSlash.getTime()) ? null : outSlash;
   }
-  const iso = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
-  if (iso) {
-    const out = new Date(Number(iso[1]), Number(iso[2]) - 1, Number(iso[3]));
-    return isNaN(out.getTime()) ? null : out;
-  }
+
+  var d = new Date(s);
+  if (!isNaN(d.getTime())) return d;
+
   return null;
 }
 
+function analyticsInstantDayKeyArt_(d) {
+  if (!d || isNaN(d.getTime())) return '';
+  return Utilities.formatDate(d, ANALYTICS_CAL_TZ, 'yyyy-MM-dd');
+}
+
 function analyticsDateKey_(d) {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return y + '-' + m + '-' + day;
+  return analyticsInstantDayKeyArt_(d);
 }
 
 function isAnalyticsDateInRange_(d, fromStr, toStr) {
   if (!fromStr && !toStr) return true;
   if (!d) return false;
-  const t = d.getTime();
-  if (fromStr) {
-    const fromD = parseAnalyticsDate_(fromStr);
-    if (fromD) {
-      fromD.setHours(0, 0, 0, 0);
-      if (t < fromD.getTime()) return false;
-    }
-  }
-  if (toStr) {
-    const toD = parseAnalyticsDate_(toStr);
-    if (toD) {
-      toD.setHours(23, 59, 59, 999);
-      if (t > toD.getTime()) return false;
-    }
-  }
+
+  var key = analyticsInstantDayKeyArt_(d);
+  if (!key) return false;
+
+  var fromKey = parseAnalyticsCalendarDayKey_(fromStr);
+  var toKey = parseAnalyticsCalendarDayKey_(toStr);
+
+  if (fromKey && key < fromKey) return false;
+  if (toKey && key > toKey) return false;
   return true;
 }
 
