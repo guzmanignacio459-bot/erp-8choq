@@ -30,10 +30,11 @@ export function buildRemitoItemsApiUrl(signature: string | null): string | null 
   };
 
   const params = new URLSearchParams();
-  if (parts.period.startsWith("bounded:")) {
-    const [, from, to] = parts.period.split(":");
-    if (from) params.set("from", from);
-    if (to) params.set("to", to);
+  const bounded = /^bounded:(\d{4}-\d{2}-\d{2}):(\d{4}-\d{2}-\d{2})$/;
+  const match = bounded.exec(parts.period);
+  if (match) {
+    params.set("from", match[1]);
+    params.set("to", match[2]);
   }
   if (parts.sku) params.set("sku", parts.sku);
   if (parts.owner) params.set("owner", parts.owner);

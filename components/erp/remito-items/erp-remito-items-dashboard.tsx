@@ -1,6 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   AlertCircle,
   Layers,
@@ -9,6 +16,7 @@ import {
   Search,
 } from "lucide-react";
 
+import { ErpRemitoItemsDebugStrip } from "@/components/erp/remito-items/erp-remito-items-debug-strip";
 import { ErpRemitoItemsAnalytics } from "@/components/erp/remito-items/erp-remito-items-analytics";
 import { ErpRemitoItemsKpiGrid } from "@/components/erp/remito-items/erp-remito-items-kpi-grid";
 import { ErpRemitoItemsTable } from "@/components/erp/remito-items/erp-remito-items-table";
@@ -52,6 +60,7 @@ const OWNER_OPTIONS = [
 ];
 
 const GAS_SKU_DEBOUNCE_MS = 400;
+const CUSTOM_DATE_DEBOUNCE_MS = 450;
 
 const inputClass =
   "h-10 rounded-lg border border-[hsl(var(--erp-border))] bg-[hsl(var(--erp-bg-card))] px-3 text-sm text-[hsl(var(--erp-fg))] focus:border-[hsl(var(--erp-accent)/0.5)] focus:outline-none focus:ring-1 focus:ring-[hsl(var(--erp-accent)/0.35)]";
@@ -86,10 +95,36 @@ export function ErpRemitoItemsDashboard() {
   const [clientArticulo, setClientArticulo] = useState("");
   const [clientTalle, setClientTalle] = useState("");
   const [clientQ, setClientQ] = useState("");
+  const [debugPanel, setDebugPanel] = useState(false);
+
+  const debouncedDateFrom = useDebouncedValue(
+    dateFrom,
+    periodPreset === "custom" ? CUSTOM_DATE_DEBOUNCE_MS : 0
+  );
+  const debouncedDateTo = useDebouncedValue(
+    dateTo,
+    periodPreset === "custom" ? CUSTOM_DATE_DEBOUNCE_MS : 0
+  );
+
+  const effectiveDateFrom =
+    periodPreset === "custom" ? debouncedDateFrom : dateFrom;
+  const effectiveDateTo = periodPreset === "custom" ? debouncedDateTo : dateTo;
+
+  const customDatesPending =
+    periodPreset === "custom" &&
+    (dateFrom !== debouncedDateFrom || dateTo !== debouncedDateTo);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    setDebugPanel(
+      new URLSearchParams(window.location.search).get("debugItems") === "1"
+    );
+  }, []);
 
   const resolvedPeriod = useMemo(
-    () => resolvePeriodRange(periodPreset, dateFrom, dateTo),
-    [periodPreset, dateFrom, dateTo]
+    () =>
+      resolvePeriodRange(periodPreset, effectiveDateFrom, effectiveDateTo),
+    [periodPreset, effectiveDateFrom, effectiveDateTo]
   );
 
   const querySignature = useMemo(
@@ -211,12 +246,27 @@ export function ErpRemitoItemsDashboard() {
     return () => fetchGuardRef.current.cancel();
   }, [load]);
 
+  useLayoutEffect(() => {
+    if (resolvedPeriod.kind === "invalid") return;
+    if (!querySignature) return;
+    if (loadedSignature === querySignature) return;
+    setLoading(true);
+    setItems([]);
+    setLoadedSignature(null);
+  }, [querySignature, resolvedPeriod.kind, loadedSignature]);
+
   const querySynced =
     querySignature != null &&
     loadedSignature != null &&
     querySignature === loadedSignature;
 
-  const dataReady = !loading && !gasSkuPending && querySynced;
+  const dataReady =
+    !loading && !gasSkuPending && !customDatesPending && querySynced;
+
+  const apiFrom =
+    resolvedPeriod.kind === "bounded" ? resolvedPeriod.from : null;
+  const apiTo = resolvedPeriod.kind === "bounded" ? resolvedPeriod.to : null;
+  const debugFetchUrl = buildRemitoItemsApiUrl(querySignature);
 
   /** Única fuente para tabla, KPIs y analytics (filtros cliente incluidos). */
   const displayItems = useMemo(() => {
@@ -260,7 +310,10 @@ export function ErpRemitoItemsDashboard() {
   const rangeInvalid = resolvedPeriod.kind === "invalid";
   const isInitialLoad = loading && items.length === 0 && !loadedSignature;
   const showRefreshing =
-    loading || gasSkuPending || (querySignature != null && !querySynced);
+    loading ||
+    gasSkuPending ||
+    customDatesPending ||
+    (querySignature != null && !querySynced);
 
   return (
     <div className="min-w-0 max-w-full space-y-6 p-4 sm:p-6 lg:p-8">
@@ -292,7 +345,9 @@ export function ErpRemitoItemsDashboard() {
           <button
             type="button"
             onClick={() => void load()}
-            disabled={loading || rangeInvalid || gasSkuPending}
+            disabled={
+              loading || rangeInvalid || gasSkuPending || customDatesPending
+            }
             className="inline-flex h-9 shrink-0 items-center gap-2 self-start rounded-lg border border-[hsl(var(--erp-border))] bg-[hsl(var(--erp-bg-card))] px-3 text-xs font-medium text-[hsl(var(--erp-fg-muted))] hover:text-[hsl(var(--erp-fg))] disabled:opacity-50"
           >
             <RefreshCw
@@ -423,9 +478,27 @@ export function ErpRemitoItemsDashboard() {
         <p className="mt-3 text-xs text-[hsl(var(--erp-fg-muted))]">
           {periodLabel}
           {showRefreshing ? " · Actualizando…" : ""}
+          {customDatesPending ? " · Aplicando fechas…" : ""}
           {gasSkuPending ? " · Aplicando SKU…" : ""}
         </p>
       </header>
+
+      {debugPanel && (
+        <ErpRemitoItemsDebugStrip
+          querySignature={querySignature}
+          loadedSignature={loadedSignature}
+          loading={loading}
+          gasSkuPending={gasSkuPending}
+          customDatesPending={customDatesPending}
+          itemsLength={items.length}
+          displayItemsLength={displayItems.length}
+          apiFrom={apiFrom}
+          apiTo={apiTo}
+          fetchUrl={debugFetchUrl}
+          dataReady={dataReady}
+          showRefreshing={showRefreshing}
+        />
+      )}
 
       {rangeInvalid ? (
         <div className="erp-card border-amber-500/20 bg-amber-500/5 px-4 py-8 text-center text-sm text-amber-200">
@@ -465,13 +538,20 @@ export function ErpRemitoItemsDashboard() {
           ) : (
             <>
               <ErpRemitoItemsKpiGrid
+                key={loadedSignature ?? "remito-items-kpi"}
                 summary={displaySummary}
                 periodLabel={periodLabel}
               />
 
-              <ErpRemitoItemsAnalytics analytics={displayAnalytics} />
+              <ErpRemitoItemsAnalytics
+                key={loadedSignature ?? "remito-items-analytics"}
+                analytics={displayAnalytics}
+              />
 
-              <section className="erp-card p-4 sm:p-5">
+              <section
+                key={loadedSignature ?? "remito-items-table"}
+                className="erp-card p-4 sm:p-5"
+              >
                 <div className="mb-4 flex items-center gap-2">
                   <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-[hsl(var(--erp-border))] bg-[hsl(var(--erp-bg-hover))] text-[hsl(var(--erp-accent))]">
                     <Package className="h-4 w-4" />

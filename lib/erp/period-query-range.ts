@@ -33,11 +33,6 @@ export type ResolvedPeriodRange =
   | { kind: "all" }
   | { kind: "invalid"; message: string };
 
-function normalizeFromTo(from: string, to: string): PeriodQueryRange {
-  if (from <= to) return { from, to };
-  return { from: to, to: from };
-}
-
 /** Bounds YYYY-MM-DD para presets fijos (no custom / all). */
 export function getBoundsForPreset(
   preset: PeriodPreset
@@ -90,7 +85,8 @@ export function getPeriodQueryRange(
     const to = dateTo.trim();
     if (!from || !to) return null;
     if (!isValidYmd(from) || !isValidYmd(to)) return null;
-    return normalizeFromTo(from, to);
+    if (from > to) return null;
+    return { from, to };
   }
 
   return getBoundsForPreset(preset);
@@ -118,8 +114,13 @@ export function resolvePeriodRange(
         message: "Las fechas Desde/Hasta no son válidas.",
       };
     }
-    const bounds = normalizeFromTo(from, to);
-    return { kind: "bounded", from: bounds.from, to: bounds.to };
+    if (from > to) {
+      return {
+        kind: "invalid",
+        message: "La fecha Desde no puede ser posterior a Hasta.",
+      };
+    }
+    return { kind: "bounded", from, to };
   }
 
   const bounds = getBoundsForPreset(preset);
