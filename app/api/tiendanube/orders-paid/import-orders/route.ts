@@ -545,10 +545,11 @@ function buildRemitoPayload(order: any): { data: any; itemErrors: string[] } {
     parseMoneyToNumber(order?.discount ?? order?.discount_total ?? order?.total_discounts ?? 0)
   );
 
-  // shipping: cliente vs owner
-  const shippingPaid      = getShippingPaid(order);        // cliente (0 si gratis)
-  const shippingOwnerCost = getShippingOwnerCost(order);   // lo que paga 8Q si aplica
-  const costoEnvioOwner   = shippingPaid > 0 ? 0 : (shippingOwnerCost > 0 ? shippingOwnerCost : 0);
+  // shipping: cliente vs owner (TN crudo vs cabecera ERP normalizada)
+  const shippingPaid = getShippingPaid(order); // cobrado al cliente (0 si gratis)
+  const shippingOwnerCostTn = getShippingOwnerCost(order);
+  const costoEnvioOwner =
+    shippingPaid > 0 ? 0 : shippingOwnerCostTn > 0 ? shippingOwnerCostTn : 0;
   const shippingOwnerCostForItems = costoEnvioOwner;
 
   const feeTotal = 0;
@@ -574,7 +575,11 @@ function buildRemitoPayload(order: any): { data: any; itemErrors: string[] } {
   });
 
   const envioOwner: "CLIENTE" | "8Q" | "SIN_DATO" =
-    shippingPaid > 0 ? "CLIENTE" : (costoEnvioOwner > 0 ? "8Q" : "SIN_DATO");
+    shippingPaid > 0 ? "CLIENTE" : costoEnvioOwner > 0 ? "8Q" : "SIN_DATO";
+
+  /** Cabecera REMITOS: no persistir owner TN crudo si el cliente pagó. */
+  const shippingOwnerCostForRemitos =
+    envioOwner === "8Q" ? costoEnvioOwner : 0;
 
   const data = {
     fechaISO,
@@ -594,7 +599,7 @@ function buildRemitoPayload(order: any): { data: any; itemErrors: string[] } {
     // ✅ envío absorbido por marca
     costoEnvioOwner,
     envioOwner,
-    shippingOwnerCost,
+    shippingOwnerCost: shippingOwnerCostForRemitos,
     shippingCustomerCost: shippingPaid,
 
     // ✅ totales.* (si GAS lo usa, mejor)
@@ -602,6 +607,8 @@ function buildRemitoPayload(order: any): { data: any; itemErrors: string[] } {
       subtotal: subtotalBruto,
       costoEnvio: shippingPaid,
       costoEnvioOwner,
+      shippingCustomerCost: shippingPaid,
+      shippingOwnerCost: shippingOwnerCostForRemitos,
       feeTotal,
       totalFinal,
       descuentoTotalAbs,

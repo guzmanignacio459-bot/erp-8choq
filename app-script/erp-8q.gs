@@ -997,16 +997,18 @@ function saveRemito(data) {
 // SHIPPING NORMALIZADO
 // =========================
 
-const shippingCustomerCost = pickMoney(
+const shippingCustomerCostIn = pickMoney(
   data?.shippingCustomerCost,
   data?.totales?.shippingCustomerCost,
   data?.shipping, // fallback legacy
   data?.costoEnvioCliente // fallback legacy
 );
 
-const shippingOwnerCost = pickMoney(
+const shippingOwnerCostIn = pickMoney(
   data?.shippingOwnerCost,
-  data?.totales?.shippingOwnerCost
+  data?.totales?.shippingOwnerCost,
+  data?.costoEnvioOwner,
+  data?.totales?.costoEnvioOwner
 );
 
 const totalFinal = pickMoney(data?.totales?.totalFinal, data?.totalFinal);
@@ -1014,13 +1016,19 @@ const totalFinal = pickMoney(data?.totales?.totalFinal, data?.totalFinal);
 // En Remitos: Recargo/Descuento (negativo si es descuento)
 const recargoDescuento = num(data?.recargoDescuento, 0);
 
-// Definición final de quién paga el envío
+// Cabecera shipping normalizada (cliente paga → SCC; gratis 8Q → SOC)
+let shippingCustomerCost = 0;
+let shippingOwnerCost = 0;
 let envioOwnerFinal = "";
 
-if (shippingOwnerCost > 0) {
-  envioOwnerFinal = "8Q";
-} else if (shippingCustomerCost > 0) {
+if (shippingCustomerCostIn > 0) {
   envioOwnerFinal = "CLIENTE";
+  shippingCustomerCost = shippingCustomerCostIn;
+  shippingOwnerCost = 0;
+} else if (shippingOwnerCostIn > 0) {
+  envioOwnerFinal = "8Q";
+  shippingCustomerCost = 0;
+  shippingOwnerCost = shippingOwnerCostIn;
 } else {
   envioOwnerFinal = "";
 }
@@ -1101,7 +1109,7 @@ const normalizeDiscountAsignado_ = (x) => {
 
   if (!hasDiscountOrNetoFromNext) {
     const calc = computeNetosProporcionales_(expanded, subtotal, shippingCustomerCost, totalFinal, {
-   costoEnvioOwner: shippingOwnerCost,
+   costoEnvioOwner: shippingOwnerCost, // pool 8Q ya normalizado (0 si CLIENTE)
    feeTotal: 0
    });
 
