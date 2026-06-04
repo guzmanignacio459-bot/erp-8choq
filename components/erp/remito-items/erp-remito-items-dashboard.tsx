@@ -4,7 +4,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertCircle,
   Layers,
-  Loader2,
   Package,
   RefreshCw,
   Search,
@@ -15,15 +14,18 @@ import { ErpRemitoItemsKpiGrid } from "@/components/erp/remito-items/erp-remito-
 import { ErpRemitoItemsTable } from "@/components/erp/remito-items/erp-remito-items-table";
 import { ErpDashboardLoading } from "@/components/erp/shared/erp-dashboard-loading";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
+import { createFetchGuard, isAbortError } from "@/lib/erp/fetch-guard";
 import {
   computeRemitoItemsProductAnalytics,
   computeRemitoItemsSummary,
 } from "@/lib/erp/remito-items-aggregator";
 import { filterRemitoItemsClient } from "@/lib/erp/remito-items-filter";
-import { sortRemitoItemsByFechaDesc } from "@/lib/erp/remito-items-sort";
-import { createFetchGuard, isAbortError } from "@/lib/erp/fetch-guard";
 import {
-  appendPeriodRangeToSearchParams,
+  buildRemitoItemsApiUrl,
+  buildRemitoItemsQuerySignature,
+} from "@/lib/erp/remito-items-query";
+import { sortRemitoItemsByFechaDesc } from "@/lib/erp/remito-items-sort";
+import {
   getBoundsForPreset,
   getPeriodRangeLabel,
   resolvePeriodRange,
@@ -54,14 +56,20 @@ const GAS_SKU_DEBOUNCE_MS = 400;
 const inputClass =
   "h-10 rounded-lg border border-[hsl(var(--erp-border))] bg-[hsl(var(--erp-bg-card))] px-3 text-sm text-[hsl(var(--erp-fg))] focus:border-[hsl(var(--erp-accent)/0.5)] focus:outline-none focus:ring-1 focus:ring-[hsl(var(--erp-accent)/0.35)]";
 
+const DEV_DEBUG =
+  typeof process !== "undefined" && process.env.NODE_ENV === "development";
+
 export function ErpRemitoItemsDashboard() {
   const fetchGuardRef = useRef(createFetchGuard());
+  const querySignatureRef = useRef<string | null>(null);
 
   const [items, setItems] = useState<ErpRemitoItemRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [fetchedAt, setFetchedAt] = useState<string | null>(null);
   const [gasActionUsed, setGasActionUsed] = useState<string | null>(null);
+  /** Firma del último fetch aplicado a `items` (anti-respuesta obsoleta). */
+  const [loadedSignature, setLoadedSignature] = useState<string | null>(null);
 
   const [periodPreset, setPeriodPreset] =
     useState<PeriodPreset>(DEFAULT_PERIOD_PRESET);
@@ -84,54 +92,97 @@ export function ErpRemitoItemsDashboard() {
     [periodPreset, dateFrom, dateTo]
   );
 
+  const querySignature = useMemo(
+    () =>
+      buildRemitoItemsQuerySignature(
+        resolvedPeriod,
+        debouncedGasSku,
+        gasOwner
+      ),
+    [resolvedPeriod, debouncedGasSku, gasOwner]
+  );
+
+  querySignatureRef.current = querySignature;
+
   const periodLabel = useMemo(
     () => getPeriodRangeLabel(periodPreset, dateFrom, dateTo),
     [periodPreset, dateFrom, dateTo]
   );
 
+  const gasSkuPending = gasSku.trim() !== debouncedGasSku.trim();
+
+  const hasClientFilters = Boolean(
+    clientArticulo.trim() || clientTalle.trim() || clientQ.trim()
+  );
+
   const load = useCallback(async () => {
     const guard = fetchGuardRef.current;
     const { reqId, signal } = guard.begin();
-    setLoading(true);
-    setError(null);
 
     if (resolvedPeriod.kind === "invalid") {
       setItems([]);
+      setLoadedSignature(null);
       setError(resolvedPeriod.message);
       setLoading(false);
       return;
     }
 
-    try {
-      const params = new URLSearchParams();
-      appendPeriodRangeToSearchParams(params, resolvedPeriod);
-      if (debouncedGasSku.trim()) params.set("sku", debouncedGasSku.trim());
-      if (gasOwner.trim()) params.set("owner", gasOwner.trim());
+    const signatureAtStart = querySignatureRef.current;
+    const url = buildRemitoItemsApiUrl(signatureAtStart);
+    if (!url || !signatureAtStart) {
+      setItems([]);
+      setLoadedSignature(null);
+      setError("No se pudo armar la consulta de ítems.");
+      setLoading(false);
+      return;
+    }
 
-      const url = `/api/erp/remito-items${params.toString() ? `?${params}` : ""}`;
+    setLoading(true);
+    setError(null);
+    setItems([]);
+    setLoadedSignature(null);
+
+    try {
       const res = await fetch(url, { cache: "no-store", signal });
       const json = (await res.json()) as ErpRemitoItemsResponse;
 
       if (!guard.isCurrent(reqId)) return;
+      if (signatureAtStart !== querySignatureRef.current) return;
 
       if (!json.ok || !json.data) {
         setItems([]);
+        setLoadedSignature(null);
         setError(json.error ?? `Error ${res.status}`);
         return;
       }
 
-      setItems(json.data.items);
+      const rows = json.data.items ?? [];
+      setItems(rows);
+      setLoadedSignature(signatureAtStart);
       setFetchedAt(json.fetchedAt);
       setGasActionUsed(json.gasActionUsed ?? null);
+
+      if (DEV_DEBUG) {
+        console.debug("[remito-items] fetch ok", {
+          url,
+          signature: signatureAtStart,
+          rowsReceived: rows.length,
+          apiSummaryPrendas: json.data.summary?.totalPrendas,
+        });
+      }
     } catch (e: unknown) {
       if (isAbortError(e)) return;
       if (!guard.isCurrent(reqId)) return;
+      if (signatureAtStart !== querySignatureRef.current) return;
       setItems([]);
+      setLoadedSignature(null);
       setError(e instanceof Error ? e.message : String(e));
     } finally {
-      if (guard.isCurrent(reqId)) setLoading(false);
+      if (guard.isCurrent(reqId) && signatureAtStart === querySignatureRef.current) {
+        setLoading(false);
+      }
     }
-  }, [resolvedPeriod, debouncedGasSku, gasOwner]);
+  }, [resolvedPeriod, querySignature]);
 
   const handlePresetChange = (next: PeriodPreset) => {
     setPeriodPreset(next);
@@ -139,8 +190,6 @@ export function ErpRemitoItemsDashboard() {
     if (bounds) {
       setDateFrom(bounds.from);
       setDateTo(bounds.to);
-    } else if (next === "custom") {
-      // Mantiene fechas actuales para edición manual
     } else if (next === "all") {
       setDateFrom("");
       setDateTo("");
@@ -162,31 +211,56 @@ export function ErpRemitoItemsDashboard() {
     return () => fetchGuardRef.current.cancel();
   }, [load]);
 
-  const filteredItems = useMemo(() => {
+  const querySynced =
+    querySignature != null &&
+    loadedSignature != null &&
+    querySignature === loadedSignature;
+
+  const dataReady = !loading && !gasSkuPending && querySynced;
+
+  /** Única fuente para tabla, KPIs y analytics (filtros cliente incluidos). */
+  const displayItems = useMemo(() => {
+    if (!dataReady) return [];
     const filtered = filterRemitoItemsClient(items, {
       articulo: clientArticulo,
       talle: clientTalle,
       q: clientQ,
     });
     return sortRemitoItemsByFechaDesc(filtered);
-  }, [items, clientArticulo, clientTalle, clientQ]);
+  }, [dataReady, items, clientArticulo, clientTalle, clientQ]);
 
-  const summary = useMemo(
-    () => computeRemitoItemsSummary(filteredItems),
-    [filteredItems]
+  const displaySummary = useMemo(
+    () => computeRemitoItemsSummary(displayItems),
+    [displayItems]
   );
 
-  const productAnalytics = useMemo(
-    () => computeRemitoItemsProductAnalytics(filteredItems),
-    [filteredItems]
+  const displayAnalytics = useMemo(
+    () => computeRemitoItemsProductAnalytics(displayItems),
+    [displayItems]
   );
 
-  const dataReady = !loading;
+  useEffect(() => {
+    if (!DEV_DEBUG || !dataReady) return;
+    console.debug("[remito-items] view", {
+      querySignature,
+      rowsLoaded: items.length,
+      rowsDisplay: displayItems.length,
+      kpiPrendas: displaySummary.totalPrendas,
+      clientFilters: hasClientFilters,
+    });
+  }, [
+    dataReady,
+    querySignature,
+    items.length,
+    displayItems.length,
+    displaySummary.totalPrendas,
+    hasClientFilters,
+  ]);
+
   const rangeInvalid = resolvedPeriod.kind === "invalid";
-  const isInitialLoad = loading && items.length === 0;
-  const viewItems = dataReady ? filteredItems : [];
-  const viewSummary = dataReady ? summary : null;
-  const viewAnalytics = dataReady ? productAnalytics : null;
+  const isInitialLoad = loading && items.length === 0 && !loadedSignature;
+  const showRefreshing =
+    loading || gasSkuPending || (querySignature != null && !querySynced);
 
   return (
     <div className="min-w-0 max-w-full space-y-6 p-4 sm:p-6 lg:p-8">
@@ -210,18 +284,19 @@ export function ErpRemitoItemsDashboard() {
                   timeStyle: "short",
                 }).format(new Date(fetchedAt))}
                 {gasActionUsed ? ` · Fuente: ${gasActionUsed}` : ""}
-                {` · ${viewItems.length} filas visibles`}
+                {` · ${displayItems.length} filas visibles`}
+                {hasClientFilters ? " · filtros cliente activos" : ""}
               </p>
             )}
           </div>
           <button
             type="button"
             onClick={() => void load()}
-            disabled={loading || rangeInvalid}
+            disabled={loading || rangeInvalid || gasSkuPending}
             className="inline-flex h-9 shrink-0 items-center gap-2 self-start rounded-lg border border-[hsl(var(--erp-border))] bg-[hsl(var(--erp-bg-card))] px-3 text-xs font-medium text-[hsl(var(--erp-fg-muted))] hover:text-[hsl(var(--erp-fg))] disabled:opacity-50"
           >
             <RefreshCw
-              className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`}
+              className={`h-3.5 w-3.5 ${showRefreshing ? "animate-spin" : ""}`}
             />
             Actualizar
           </button>
@@ -347,7 +422,8 @@ export function ErpRemitoItemsDashboard() {
 
         <p className="mt-3 text-xs text-[hsl(var(--erp-fg-muted))]">
           {periodLabel}
-          {loading ? " · Actualizando…" : ""}
+          {showRefreshing ? " · Actualizando…" : ""}
+          {gasSkuPending ? " · Aplicando SKU…" : ""}
         </p>
       </header>
 
@@ -357,7 +433,7 @@ export function ErpRemitoItemsDashboard() {
         </div>
       ) : isInitialLoad ? (
         <ErpDashboardLoading label="Cargando ítems…" />
-      ) : error && items.length === 0 ? (
+      ) : error && items.length === 0 && !loadedSignature ? (
         <div className="erp-card flex flex-col items-center gap-4 border-rose-500/20 bg-rose-500/5 px-6 py-12 text-center">
           <AlertCircle className="h-10 w-10 text-rose-400" />
           <div>
@@ -384,20 +460,16 @@ export function ErpRemitoItemsDashboard() {
             </div>
           )}
 
-          {loading ? (
+          {showRefreshing ? (
             <ErpDashboardLoading compact />
           ) : (
             <>
-              {viewSummary && (
-                <ErpRemitoItemsKpiGrid
-                  summary={viewSummary}
-                  periodLabel={periodLabel}
-                />
-              )}
+              <ErpRemitoItemsKpiGrid
+                summary={displaySummary}
+                periodLabel={periodLabel}
+              />
 
-              {viewAnalytics && (
-                <ErpRemitoItemsAnalytics analytics={viewAnalytics} />
-              )}
+              <ErpRemitoItemsAnalytics analytics={displayAnalytics} />
 
               <section className="erp-card p-4 sm:p-5">
                 <div className="mb-4 flex items-center gap-2">
@@ -408,10 +480,10 @@ export function ErpRemitoItemsDashboard() {
                     Detalle por prenda
                   </h2>
                   <span className="text-xs text-[hsl(var(--erp-fg-muted))]">
-                    ({viewItems.length} filas)
+                    ({displayItems.length} filas)
                   </span>
                 </div>
-                <ErpRemitoItemsTable items={viewItems} />
+                <ErpRemitoItemsTable items={displayItems} />
               </section>
             </>
           )}
