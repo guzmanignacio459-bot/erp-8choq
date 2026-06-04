@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertCircle,
   BarChart3,
@@ -13,6 +13,9 @@ import { ErpAnalyticsKpiGrid } from "@/components/erp/analytics/erp-analytics-kp
 import { ErpAnalyticsMetaSlot } from "@/components/erp/analytics/erp-analytics-meta-slot";
 import { ErpAnalyticsSalesByDay } from "@/components/erp/analytics/erp-analytics-sales-by-day";
 import { ErpAnalyticsTopProducts } from "@/components/erp/analytics/erp-analytics-top-products";
+import { ErpDashboardLoading } from "@/components/erp/shared/erp-dashboard-loading";
+import { createFetchGuard, isAbortError } from "@/lib/erp/fetch-guard";
+import { getPeriodQueryRange } from "@/lib/erp/period-query-range";
 import {
   DEFAULT_PERIOD_PRESET,
   getAppliedPeriodLabel,
@@ -31,58 +34,6 @@ const PERIOD_OPTIONS: { value: PeriodPreset; label: string }[] = [
 
 const inputClass =
   "h-10 rounded-lg border border-[hsl(var(--erp-border))] bg-[hsl(var(--erp-bg-card))] px-3 text-sm text-[hsl(var(--erp-fg))] focus:border-[hsl(var(--erp-accent)/0.5)] focus:outline-none focus:ring-1 focus:ring-[hsl(var(--erp-accent)/0.35)]";
-
-function formatIsoDate(d: Date): string {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
-}
-
-function startOfDay(d: Date): Date {
-  const x = new Date(d);
-  x.setHours(0, 0, 0, 0);
-  return x;
-}
-
-function getAnalyticsQueryRange(
-  preset: PeriodPreset,
-  customFrom: string,
-  customTo: string
-): { from?: string; to?: string } {
-  if (preset === "all") return {};
-
-  const now = new Date();
-  const todayStart = startOfDay(now);
-
-  switch (preset) {
-    case "today":
-      return { from: formatIsoDate(todayStart), to: formatIsoDate(now) };
-    case "yesterday": {
-      const y = new Date(todayStart);
-      y.setDate(y.getDate() - 1);
-      return { from: formatIsoDate(y), to: formatIsoDate(y) };
-    }
-    case "7d": {
-      const start = new Date(todayStart);
-      start.setDate(start.getDate() - 6);
-      return { from: formatIsoDate(start), to: formatIsoDate(now) };
-    }
-    case "30d": {
-      const start = new Date(todayStart);
-      start.setDate(start.getDate() - 29);
-      return { from: formatIsoDate(start), to: formatIsoDate(now) };
-    }
-    case "custom": {
-      const range: { from?: string; to?: string } = {};
-      if (customFrom.trim()) range.from = customFrom.trim();
-      if (customTo.trim()) range.to = customTo.trim();
-      return range;
-    }
-    default:
-      return {};
-  }
-}
 
 function SectionCard({
   title,
@@ -114,6 +65,8 @@ function SectionCard({
 }
 
 export function ErpAnalyticsDashboard() {
+  const fetchGuardRef = useRef(createFetchGuard());
+
   const [summary, setSummary] = useState<ErpAnalyticsSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -137,37 +90,22 @@ export function ErpAnalyticsDashboard() {
   );
 
   const load = useCallback(async () => {
+    const guard = fetchGuardRef.current;
+    const { reqId, signal } = guard.begin();
     setLoading(true);
     setError(null);
 
     try {
-      const range = getAnalyticsQueryRange(
-        periodPreset,
-        customFrom,
-        customTo
-      );
+      const range = getPeriodQueryRange(periodPreset, customFrom, customTo);
       const params = new URLSearchParams();
       if (range.from) params.set("from", range.from);
       if (range.to) params.set("to", range.to);
 
       const url = `/api/erp/analytics${params.toString() ? `?${params}` : ""}`;
-      const res = await fetch(url, { cache: "no-store" });
-      const bodyText = await res.text();
+      const res = await fetch(url, { cache: "no-store", signal });
+      const json = (await res.json()) as ErpAnalyticsResponse;
 
-      let json: ErpAnalyticsResponse;
-      try {
-        json = JSON.parse(bodyText) as ErpAnalyticsResponse;
-      } catch {
-        setSummary(null);
-        setError(
-          `Respuesta inválida del servidor (HTTP ${res.status}). ${
-            bodyText.trim().startsWith("<")
-              ? "Se recibió HTML en lugar de JSON."
-              : bodyText.slice(0, 120)
-          }`
-        );
-        return;
-      }
+      if (!guard.isCurrent(reqId)) return;
 
       if (!json.ok || !json.data) {
         setSummary(null);
@@ -179,16 +117,23 @@ export function ErpAnalyticsDashboard() {
       setFetchedAt(json.fetchedAt);
       setGasActionUsed(json.gasActionUsed ?? null);
     } catch (e: unknown) {
+      if (isAbortError(e)) return;
+      if (!guard.isCurrent(reqId)) return;
       setSummary(null);
       setError(e instanceof Error ? e.message : String(e));
     } finally {
-      setLoading(false);
+      if (guard.isCurrent(reqId)) setLoading(false);
     }
   }, [periodPreset, customFrom, customTo]);
 
   useEffect(() => {
     void load();
+    return () => fetchGuardRef.current.cancel();
   }, [load]);
+
+  const dataReady = !loading;
+  const viewSummary = dataReady ? summary : null;
+  const isInitialLoad = loading && !summary;
 
   return (
     <div className="min-w-0 max-w-full space-y-6 p-4 sm:p-6 lg:p-8">
@@ -204,7 +149,7 @@ export function ErpAnalyticsDashboard() {
             <p className="text-sm text-[hsl(var(--erp-fg-muted))]">
               Métricas read-only desde REMITOS · Sin Meta Ads conectado
             </p>
-            {fetchedAt && (
+            {fetchedAt && dataReady && viewSummary && (
               <p className="text-[10px] text-[hsl(var(--erp-fg-subtle))]">
                 Actualizado{" "}
                 {new Intl.DateTimeFormat("es-AR", {
@@ -212,9 +157,10 @@ export function ErpAnalyticsDashboard() {
                   timeStyle: "short",
                 }).format(new Date(fetchedAt))}
                 {gasActionUsed ? ` · Fuente: ${gasActionUsed}` : ""}
-                {summary?.analyticsSource === "listRemitosFull-fallback"
+                {viewSummary.analyticsSource === "listRemitosFull-fallback"
                   ? " · fallback listRemitosFull"
                   : ""}
+                {` · ${viewSummary.remitosInScope} remitos en scope`}
               </p>
             )}
           </div>
@@ -280,24 +226,14 @@ export function ErpAnalyticsDashboard() {
 
           <p className="text-xs text-[hsl(var(--erp-fg-muted))] lg:pb-2">
             {periodLabel}
-            {summary != null && (
-              <>
-                {" "}
-                · {summary.remitosInScope} remitos en scope
-              </>
-            )}
+            {loading ? " · Actualizando…" : ""}
           </p>
         </div>
       </header>
 
-      {loading && !summary ? (
-        <div className="flex flex-col items-center justify-center gap-3 py-24">
-          <Loader2 className="h-8 w-8 animate-spin text-[hsl(var(--erp-accent))]" />
-          <p className="text-sm text-[hsl(var(--erp-fg-muted))]">
-            Cargando analytics…
-          </p>
-        </div>
-      ) : error || !summary ? (
+      {isInitialLoad ? (
+        <ErpDashboardLoading label="Cargando analytics…" />
+      ) : (error || !summary) && !loading ? (
         <div className="erp-card flex flex-col items-center gap-4 border-rose-500/20 bg-rose-500/5 px-6 py-12 text-center">
           <AlertCircle className="h-10 w-10 text-rose-400" />
           <div>
@@ -318,17 +254,26 @@ export function ErpAnalyticsDashboard() {
         </div>
       ) : (
         <>
-          <ErpAnalyticsKpiGrid totals={summary.totals} periodLabel={periodLabel} />
+          {loading ? (
+            <ErpDashboardLoading compact />
+          ) : viewSummary ? (
+            <>
+              <ErpAnalyticsKpiGrid
+                totals={viewSummary.totals}
+                periodLabel={periodLabel}
+              />
 
-          <SectionCard title="Ventas por día" icon={Calendar}>
-            <ErpAnalyticsSalesByDay salesByDay={summary.salesByDay} />
-          </SectionCard>
+              <SectionCard title="Ventas por día" icon={Calendar}>
+                <ErpAnalyticsSalesByDay salesByDay={viewSummary.salesByDay} />
+              </SectionCard>
 
-          <SectionCard title="Top productos" icon={BarChart3}>
-            <ErpAnalyticsTopProducts section={summary.topProducts} />
-          </SectionCard>
+              <SectionCard title="Top productos" icon={BarChart3}>
+                <ErpAnalyticsTopProducts section={viewSummary.topProducts} />
+              </SectionCard>
 
-          <ErpAnalyticsMetaSlot meta={summary.meta} />
+              <ErpAnalyticsMetaSlot meta={viewSummary.meta} />
+            </>
+          ) : null}
         </>
       )}
     </div>

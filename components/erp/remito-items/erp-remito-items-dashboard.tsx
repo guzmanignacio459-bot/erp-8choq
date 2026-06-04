@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertCircle,
   Layers,
@@ -13,12 +13,16 @@ import {
 import { ErpRemitoItemsAnalytics } from "@/components/erp/remito-items/erp-remito-items-analytics";
 import { ErpRemitoItemsKpiGrid } from "@/components/erp/remito-items/erp-remito-items-kpi-grid";
 import { ErpRemitoItemsTable } from "@/components/erp/remito-items/erp-remito-items-table";
+import { ErpDashboardLoading } from "@/components/erp/shared/erp-dashboard-loading";
+import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import {
   computeRemitoItemsProductAnalytics,
   computeRemitoItemsSummary,
 } from "@/lib/erp/remito-items-aggregator";
 import { filterRemitoItemsClient } from "@/lib/erp/remito-items-filter";
 import { sortRemitoItemsByFechaDesc } from "@/lib/erp/remito-items-sort";
+import { createFetchGuard, isAbortError } from "@/lib/erp/fetch-guard";
+import { getPeriodQueryRange } from "@/lib/erp/period-query-range";
 import {
   DEFAULT_PERIOD_PRESET,
   getAppliedPeriodLabel,
@@ -44,66 +48,14 @@ const OWNER_OPTIONS = [
   { value: "SCNL", label: "SCNL" },
 ];
 
+const GAS_SKU_DEBOUNCE_MS = 400;
+
 const inputClass =
   "h-10 rounded-lg border border-[hsl(var(--erp-border))] bg-[hsl(var(--erp-bg-card))] px-3 text-sm text-[hsl(var(--erp-fg))] focus:border-[hsl(var(--erp-accent)/0.5)] focus:outline-none focus:ring-1 focus:ring-[hsl(var(--erp-accent)/0.35)]";
 
-function formatIsoDate(d: Date): string {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
-}
-
-function startOfDay(d: Date): Date {
-  const x = new Date(d);
-  x.setHours(0, 0, 0, 0);
-  return x;
-}
-
-function getQueryRange(
-  preset: PeriodPreset,
-  customFrom: string,
-  customTo: string,
-  specificDay: string
-): { from?: string; to?: string } {
-  const day = specificDay.trim();
-  if (day) {
-    return { from: day, to: day };
-  }
-
-  if (preset === "all") return {};
-  const now = new Date();
-  const todayStart = startOfDay(now);
-  switch (preset) {
-    case "today":
-      return { from: formatIsoDate(todayStart), to: formatIsoDate(now) };
-    case "yesterday": {
-      const y = new Date(todayStart);
-      y.setDate(y.getDate() - 1);
-      return { from: formatIsoDate(y), to: formatIsoDate(y) };
-    }
-    case "7d": {
-      const start = new Date(todayStart);
-      start.setDate(start.getDate() - 6);
-      return { from: formatIsoDate(start), to: formatIsoDate(now) };
-    }
-    case "30d": {
-      const start = new Date(todayStart);
-      start.setDate(start.getDate() - 29);
-      return { from: formatIsoDate(start), to: formatIsoDate(now) };
-    }
-    case "custom": {
-      const range: { from?: string; to?: string } = {};
-      if (customFrom.trim()) range.from = customFrom.trim();
-      if (customTo.trim()) range.to = customTo.trim();
-      return range;
-    }
-    default:
-      return {};
-  }
-}
-
 export function ErpRemitoItemsDashboard() {
+  const fetchGuardRef = useRef(createFetchGuard());
+
   const [items, setItems] = useState<ErpRemitoItemRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -117,6 +69,7 @@ export function ErpRemitoItemsDashboard() {
   const [specificDay, setSpecificDay] = useState("");
   const [gasSku, setGasSku] = useState("");
   const [gasOwner, setGasOwner] = useState("");
+  const debouncedGasSku = useDebouncedValue(gasSku, GAS_SKU_DEBOUNCE_MS);
 
   const [clientArticulo, setClientArticulo] = useState("");
   const [clientTalle, setClientTalle] = useState("");
@@ -134,11 +87,13 @@ export function ErpRemitoItemsDashboard() {
   );
 
   const load = useCallback(async () => {
+    const guard = fetchGuardRef.current;
+    const { reqId, signal } = guard.begin();
     setLoading(true);
     setError(null);
 
     try {
-      const range = getQueryRange(
+      const range = getPeriodQueryRange(
         periodPreset,
         customFrom,
         customTo,
@@ -147,12 +102,14 @@ export function ErpRemitoItemsDashboard() {
       const params = new URLSearchParams();
       if (range.from) params.set("from", range.from);
       if (range.to) params.set("to", range.to);
-      if (gasSku.trim()) params.set("sku", gasSku.trim());
+      if (debouncedGasSku.trim()) params.set("sku", debouncedGasSku.trim());
       if (gasOwner.trim()) params.set("owner", gasOwner.trim());
 
       const url = `/api/erp/remito-items${params.toString() ? `?${params}` : ""}`;
-      const res = await fetch(url, { cache: "no-store" });
+      const res = await fetch(url, { cache: "no-store", signal });
       const json = (await res.json()) as ErpRemitoItemsResponse;
+
+      if (!guard.isCurrent(reqId)) return;
 
       if (!json.ok || !json.data) {
         setItems([]);
@@ -164,15 +121,25 @@ export function ErpRemitoItemsDashboard() {
       setFetchedAt(json.fetchedAt);
       setGasActionUsed(json.gasActionUsed ?? null);
     } catch (e: unknown) {
+      if (isAbortError(e)) return;
+      if (!guard.isCurrent(reqId)) return;
       setItems([]);
       setError(e instanceof Error ? e.message : String(e));
     } finally {
-      setLoading(false);
+      if (guard.isCurrent(reqId)) setLoading(false);
     }
-  }, [periodPreset, customFrom, customTo, specificDay, gasSku, gasOwner]);
+  }, [
+    periodPreset,
+    customFrom,
+    customTo,
+    specificDay,
+    debouncedGasSku,
+    gasOwner,
+  ]);
 
   useEffect(() => {
     void load();
+    return () => fetchGuardRef.current.cancel();
   }, [load]);
 
   const filteredItems = useMemo(() => {
@@ -194,6 +161,12 @@ export function ErpRemitoItemsDashboard() {
     [filteredItems]
   );
 
+  const dataReady = !loading;
+  const isInitialLoad = loading && items.length === 0;
+  const viewItems = dataReady ? filteredItems : [];
+  const viewSummary = dataReady ? summary : null;
+  const viewAnalytics = dataReady ? productAnalytics : null;
+
   return (
     <div className="min-w-0 max-w-full space-y-6 p-4 sm:p-6 lg:p-8">
       <header className="erp-card p-4 sm:p-5">
@@ -208,7 +181,7 @@ export function ErpRemitoItemsDashboard() {
             <p className="text-sm text-[hsl(var(--erp-fg-muted))]">
               1 prenda = 1 fila · REMITO_ITEMS read-only
             </p>
-            {fetchedAt && (
+            {fetchedAt && dataReady && (
               <p className="text-[10px] text-[hsl(var(--erp-fg-subtle))]">
                 Actualizado{" "}
                 {new Intl.DateTimeFormat("es-AR", {
@@ -216,7 +189,7 @@ export function ErpRemitoItemsDashboard() {
                   timeStyle: "short",
                 }).format(new Date(fetchedAt))}
                 {gasActionUsed ? ` · Fuente: ${gasActionUsed}` : ""}
-                {` · ${filteredItems.length} filas visibles`}
+                {` · ${viewItems.length} filas visibles`}
               </p>
             )}
           </div>
@@ -379,16 +352,12 @@ export function ErpRemitoItemsDashboard() {
 
         <p className="mt-3 text-xs text-[hsl(var(--erp-fg-muted))]">
           {periodLabel}
+          {loading ? " · Actualizando…" : ""}
         </p>
       </header>
 
-      {loading && items.length === 0 ? (
-        <div className="flex flex-col items-center justify-center gap-3 py-24">
-          <Loader2 className="h-8 w-8 animate-spin text-[hsl(var(--erp-accent))]" />
-          <p className="text-sm text-[hsl(var(--erp-fg-muted))]">
-            Cargando ítems…
-          </p>
-        </div>
+      {isInitialLoad ? (
+        <ErpDashboardLoading label="Cargando ítems…" />
       ) : error && items.length === 0 ? (
         <div className="erp-card flex flex-col items-center gap-4 border-rose-500/20 bg-rose-500/5 px-6 py-12 text-center">
           <AlertCircle className="h-10 w-10 text-rose-400" />
@@ -416,24 +385,37 @@ export function ErpRemitoItemsDashboard() {
             </div>
           )}
 
-          <ErpRemitoItemsKpiGrid summary={summary} periodLabel={periodLabel} />
+          {loading ? (
+            <ErpDashboardLoading compact />
+          ) : (
+            <>
+              {viewSummary && (
+                <ErpRemitoItemsKpiGrid
+                  summary={viewSummary}
+                  periodLabel={periodLabel}
+                />
+              )}
 
-          <ErpRemitoItemsAnalytics analytics={productAnalytics} />
+              {viewAnalytics && (
+                <ErpRemitoItemsAnalytics analytics={viewAnalytics} />
+              )}
 
-          <section className="erp-card p-4 sm:p-5">
-            <div className="mb-4 flex items-center gap-2">
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-[hsl(var(--erp-border))] bg-[hsl(var(--erp-bg-hover))] text-[hsl(var(--erp-accent))]">
-                <Package className="h-4 w-4" />
-              </div>
-              <h2 className="text-sm font-semibold text-[hsl(var(--erp-fg))]">
-                Detalle por prenda
-              </h2>
-              <span className="text-xs text-[hsl(var(--erp-fg-muted))]">
-                ({filteredItems.length} filas)
-              </span>
-            </div>
-            <ErpRemitoItemsTable items={filteredItems} />
-          </section>
+              <section className="erp-card p-4 sm:p-5">
+                <div className="mb-4 flex items-center gap-2">
+                  <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-[hsl(var(--erp-border))] bg-[hsl(var(--erp-bg-hover))] text-[hsl(var(--erp-accent))]">
+                    <Package className="h-4 w-4" />
+                  </div>
+                  <h2 className="text-sm font-semibold text-[hsl(var(--erp-fg))]">
+                    Detalle por prenda
+                  </h2>
+                  <span className="text-xs text-[hsl(var(--erp-fg-muted))]">
+                    ({viewItems.length} filas)
+                  </span>
+                </div>
+                <ErpRemitoItemsTable items={viewItems} />
+              </section>
+            </>
+          )}
         </>
       )}
     </div>
