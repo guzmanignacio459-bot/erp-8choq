@@ -227,7 +227,7 @@ async function main() {
   console.log("\n--- Rangos ---");
   console.table(results);
 
-  console.log("\n--- Día específico ---");
+  console.log("\n--- Día único (from === to) ---");
   console.table([
     {
       day,

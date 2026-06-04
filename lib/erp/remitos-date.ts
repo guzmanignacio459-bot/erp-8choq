@@ -190,29 +190,22 @@ const PERIOD_LABELS: Record<Exclude<PeriodPreset, "custom">, string> = {
   all: "Todos los períodos",
 };
 
+/** @deprecated Usar getPeriodRangeLabel de period-query-range.ts */
 export function getAppliedPeriodLabel(options: {
   preset: PeriodPreset;
   customFrom: string;
   customTo: string;
-  specificDay: string | null;
 }): string {
-  if (options.specificDay) {
-    try {
-      return `Día ${new Intl.DateTimeFormat("es-AR", { dateStyle: "medium" }).format(
-        new Date(`${options.specificDay}T12:00:00`)
-      )}`;
-    } catch {
-      return `Día ${options.specificDay}`;
-    }
-  }
-
   if (options.preset === "custom") {
-    if (options.customFrom && options.customTo) {
-      return `Del ${options.customFrom} al ${options.customTo}`;
+    const from = options.customFrom.trim();
+    const to = options.customTo.trim();
+    if (from && to) {
+      if (from === to) return formatArtDateRangeLabel(from, to);
+      return `Del ${from} al ${to}`;
     }
-    if (options.customFrom) return `Desde ${options.customFrom}`;
-    if (options.customTo) return `Hasta ${options.customTo}`;
-    return "Rango personalizado";
+    if (from) return `Desde ${from} (falta Hasta)`;
+    if (to) return `Hasta ${to} (falta Desde)`;
+    return "Rango personalizado (incompleto)";
   }
 
   return PERIOD_LABELS[options.preset];

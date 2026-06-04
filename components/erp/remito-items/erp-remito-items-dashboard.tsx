@@ -22,12 +22,13 @@ import {
 import { filterRemitoItemsClient } from "@/lib/erp/remito-items-filter";
 import { sortRemitoItemsByFechaDesc } from "@/lib/erp/remito-items-sort";
 import { createFetchGuard, isAbortError } from "@/lib/erp/fetch-guard";
-import { getPeriodQueryRange } from "@/lib/erp/period-query-range";
 import {
-  DEFAULT_PERIOD_PRESET,
-  getAppliedPeriodLabel,
-  type PeriodPreset,
-} from "@/lib/erp/remitos-date";
+  appendPeriodRangeToSearchParams,
+  getBoundsForPreset,
+  getPeriodRangeLabel,
+  resolvePeriodRange,
+} from "@/lib/erp/period-query-range";
+import { DEFAULT_PERIOD_PRESET, type PeriodPreset } from "@/lib/erp/remitos-date";
 import type {
   ErpRemitoItemRow,
   ErpRemitoItemsResponse,
@@ -64,9 +65,12 @@ export function ErpRemitoItemsDashboard() {
 
   const [periodPreset, setPeriodPreset] =
     useState<PeriodPreset>(DEFAULT_PERIOD_PRESET);
-  const [customFrom, setCustomFrom] = useState("");
-  const [customTo, setCustomTo] = useState("");
-  const [specificDay, setSpecificDay] = useState("");
+  const [dateFrom, setDateFrom] = useState(
+    () => getBoundsForPreset(DEFAULT_PERIOD_PRESET)?.from ?? ""
+  );
+  const [dateTo, setDateTo] = useState(
+    () => getBoundsForPreset(DEFAULT_PERIOD_PRESET)?.to ?? ""
+  );
   const [gasSku, setGasSku] = useState("");
   const [gasOwner, setGasOwner] = useState("");
   const debouncedGasSku = useDebouncedValue(gasSku, GAS_SKU_DEBOUNCE_MS);
@@ -75,15 +79,14 @@ export function ErpRemitoItemsDashboard() {
   const [clientTalle, setClientTalle] = useState("");
   const [clientQ, setClientQ] = useState("");
 
+  const resolvedPeriod = useMemo(
+    () => resolvePeriodRange(periodPreset, dateFrom, dateTo),
+    [periodPreset, dateFrom, dateTo]
+  );
+
   const periodLabel = useMemo(
-    () =>
-      getAppliedPeriodLabel({
-        preset: periodPreset,
-        customFrom,
-        customTo,
-        specificDay: specificDay.trim() || null,
-      }),
-    [periodPreset, customFrom, customTo, specificDay]
+    () => getPeriodRangeLabel(periodPreset, dateFrom, dateTo),
+    [periodPreset, dateFrom, dateTo]
   );
 
   const load = useCallback(async () => {
@@ -92,16 +95,16 @@ export function ErpRemitoItemsDashboard() {
     setLoading(true);
     setError(null);
 
+    if (resolvedPeriod.kind === "invalid") {
+      setItems([]);
+      setError(resolvedPeriod.message);
+      setLoading(false);
+      return;
+    }
+
     try {
-      const range = getPeriodQueryRange(
-        periodPreset,
-        customFrom,
-        customTo,
-        specificDay
-      );
       const params = new URLSearchParams();
-      if (range.from) params.set("from", range.from);
-      if (range.to) params.set("to", range.to);
+      appendPeriodRangeToSearchParams(params, resolvedPeriod);
       if (debouncedGasSku.trim()) params.set("sku", debouncedGasSku.trim());
       if (gasOwner.trim()) params.set("owner", gasOwner.trim());
 
@@ -128,14 +131,31 @@ export function ErpRemitoItemsDashboard() {
     } finally {
       if (guard.isCurrent(reqId)) setLoading(false);
     }
-  }, [
-    periodPreset,
-    customFrom,
-    customTo,
-    specificDay,
-    debouncedGasSku,
-    gasOwner,
-  ]);
+  }, [resolvedPeriod, debouncedGasSku, gasOwner]);
+
+  const handlePresetChange = (next: PeriodPreset) => {
+    setPeriodPreset(next);
+    const bounds = getBoundsForPreset(next);
+    if (bounds) {
+      setDateFrom(bounds.from);
+      setDateTo(bounds.to);
+    } else if (next === "custom") {
+      // Mantiene fechas actuales para edición manual
+    } else if (next === "all") {
+      setDateFrom("");
+      setDateTo("");
+    }
+  };
+
+  const handleDateFromChange = (value: string) => {
+    setDateFrom(value);
+    setPeriodPreset("custom");
+  };
+
+  const handleDateToChange = (value: string) => {
+    setDateTo(value);
+    setPeriodPreset("custom");
+  };
 
   useEffect(() => {
     void load();
@@ -162,6 +182,7 @@ export function ErpRemitoItemsDashboard() {
   );
 
   const dataReady = !loading;
+  const rangeInvalid = resolvedPeriod.kind === "invalid";
   const isInitialLoad = loading && items.length === 0;
   const viewItems = dataReady ? filteredItems : [];
   const viewSummary = dataReady ? summary : null;
@@ -196,7 +217,7 @@ export function ErpRemitoItemsDashboard() {
           <button
             type="button"
             onClick={() => void load()}
-            disabled={loading}
+            disabled={loading || rangeInvalid}
             className="inline-flex h-9 shrink-0 items-center gap-2 self-start rounded-lg border border-[hsl(var(--erp-border))] bg-[hsl(var(--erp-bg-card))] px-3 text-xs font-medium text-[hsl(var(--erp-fg-muted))] hover:text-[hsl(var(--erp-fg))] disabled:opacity-50"
           >
             <RefreshCw
@@ -213,10 +234,9 @@ export function ErpRemitoItemsDashboard() {
             </label>
             <select
               value={periodPreset}
-              onChange={(e) => {
-                setPeriodPreset(e.target.value as PeriodPreset);
-                setSpecificDay("");
-              }}
+              onChange={(e) =>
+                handlePresetChange(e.target.value as PeriodPreset)
+              }
               className={inputClass}
             >
               {PERIOD_OPTIONS.map((opt) => (
@@ -227,54 +247,29 @@ export function ErpRemitoItemsDashboard() {
             </select>
           </div>
 
-          {periodPreset === "custom" && (
-            <>
-              <div className="flex flex-col gap-1.5">
-                <label className="text-[10px] font-medium uppercase tracking-wider text-[hsl(var(--erp-fg-subtle))]">
-                  Desde
-                </label>
-                <input
-                  type="date"
-                  value={customFrom}
-                  onChange={(e) => setCustomFrom(e.target.value)}
-                  className={inputClass}
-                />
-              </div>
-              <div className="flex flex-col gap-1.5">
-                <label className="text-[10px] font-medium uppercase tracking-wider text-[hsl(var(--erp-fg-subtle))]">
-                  Hasta
-                </label>
-                <input
-                  type="date"
-                  value={customTo}
-                  onChange={(e) => setCustomTo(e.target.value)}
-                  className={inputClass}
-                />
-              </div>
-            </>
-          )}
-
           <div className="flex flex-col gap-1.5">
             <label className="text-[10px] font-medium uppercase tracking-wider text-[hsl(var(--erp-fg-subtle))]">
-              Día específico (GAS)
+              Desde
             </label>
-            <div className="flex gap-2">
-              <input
-                type="date"
-                value={specificDay}
-                onChange={(e) => setSpecificDay(e.target.value)}
-                className={`${inputClass} min-w-0 flex-1`}
-              />
-              {specificDay && (
-                <button
-                  type="button"
-                  onClick={() => setSpecificDay("")}
-                  className="shrink-0 rounded-lg border border-[hsl(var(--erp-border))] px-3 text-xs text-[hsl(var(--erp-fg-muted))] hover:text-[hsl(var(--erp-fg))]"
-                >
-                  Limpiar
-                </button>
-              )}
-            </div>
+            <input
+              type="date"
+              value={dateFrom}
+              onChange={(e) => handleDateFromChange(e.target.value)}
+              disabled={periodPreset !== "custom"}
+              className={inputClass}
+            />
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <label className="text-[10px] font-medium uppercase tracking-wider text-[hsl(var(--erp-fg-subtle))]">
+              Hasta
+            </label>
+            <input
+              type="date"
+              value={dateTo}
+              onChange={(e) => handleDateToChange(e.target.value)}
+              disabled={periodPreset !== "custom"}
+              className={inputClass}
+            />
           </div>
 
           <div className="flex flex-col gap-1.5">
@@ -356,7 +351,11 @@ export function ErpRemitoItemsDashboard() {
         </p>
       </header>
 
-      {isInitialLoad ? (
+      {rangeInvalid ? (
+        <div className="erp-card border-amber-500/20 bg-amber-500/5 px-4 py-8 text-center text-sm text-amber-200">
+          {resolvedPeriod.message}
+        </div>
+      ) : isInitialLoad ? (
         <ErpDashboardLoading label="Cargando ítems…" />
       ) : error && items.length === 0 ? (
         <div className="erp-card flex flex-col items-center gap-4 border-rose-500/20 bg-rose-500/5 px-6 py-12 text-center">

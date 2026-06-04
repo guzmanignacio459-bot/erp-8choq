@@ -15,12 +15,13 @@ import { ErpAnalyticsSalesByDay } from "@/components/erp/analytics/erp-analytics
 import { ErpAnalyticsTopProducts } from "@/components/erp/analytics/erp-analytics-top-products";
 import { ErpDashboardLoading } from "@/components/erp/shared/erp-dashboard-loading";
 import { createFetchGuard, isAbortError } from "@/lib/erp/fetch-guard";
-import { getPeriodQueryRange } from "@/lib/erp/period-query-range";
 import {
-  DEFAULT_PERIOD_PRESET,
-  getAppliedPeriodLabel,
-  type PeriodPreset,
-} from "@/lib/erp/remitos-date";
+  appendPeriodRangeToSearchParams,
+  getBoundsForPreset,
+  getPeriodRangeLabel,
+  resolvePeriodRange,
+} from "@/lib/erp/period-query-range";
+import { DEFAULT_PERIOD_PRESET, type PeriodPreset } from "@/lib/erp/remitos-date";
 import type { ErpAnalyticsResponse, ErpAnalyticsSummary } from "@/types/erp";
 
 const PERIOD_OPTIONS: { value: PeriodPreset; label: string }[] = [
@@ -75,19 +76,44 @@ export function ErpAnalyticsDashboard() {
 
   const [periodPreset, setPeriodPreset] =
     useState<PeriodPreset>(DEFAULT_PERIOD_PRESET);
-  const [customFrom, setCustomFrom] = useState("");
-  const [customTo, setCustomTo] = useState("");
+  const [dateFrom, setDateFrom] = useState(
+    () => getBoundsForPreset(DEFAULT_PERIOD_PRESET)?.from ?? ""
+  );
+  const [dateTo, setDateTo] = useState(
+    () => getBoundsForPreset(DEFAULT_PERIOD_PRESET)?.to ?? ""
+  );
+
+  const resolvedPeriod = useMemo(
+    () => resolvePeriodRange(periodPreset, dateFrom, dateTo),
+    [periodPreset, dateFrom, dateTo]
+  );
 
   const periodLabel = useMemo(
-    () =>
-      getAppliedPeriodLabel({
-        preset: periodPreset,
-        customFrom,
-        customTo,
-        specificDay: null,
-      }),
-    [periodPreset, customFrom, customTo]
+    () => getPeriodRangeLabel(periodPreset, dateFrom, dateTo),
+    [periodPreset, dateFrom, dateTo]
   );
+
+  const handlePresetChange = (next: PeriodPreset) => {
+    setPeriodPreset(next);
+    const bounds = getBoundsForPreset(next);
+    if (bounds) {
+      setDateFrom(bounds.from);
+      setDateTo(bounds.to);
+    } else if (next === "all") {
+      setDateFrom("");
+      setDateTo("");
+    }
+  };
+
+  const handleDateFromChange = (value: string) => {
+    setDateFrom(value);
+    setPeriodPreset("custom");
+  };
+
+  const handleDateToChange = (value: string) => {
+    setDateTo(value);
+    setPeriodPreset("custom");
+  };
 
   const load = useCallback(async () => {
     const guard = fetchGuardRef.current;
@@ -95,11 +121,16 @@ export function ErpAnalyticsDashboard() {
     setLoading(true);
     setError(null);
 
+    if (resolvedPeriod.kind === "invalid") {
+      setSummary(null);
+      setError(resolvedPeriod.message);
+      setLoading(false);
+      return;
+    }
+
     try {
-      const range = getPeriodQueryRange(periodPreset, customFrom, customTo);
       const params = new URLSearchParams();
-      if (range.from) params.set("from", range.from);
-      if (range.to) params.set("to", range.to);
+      appendPeriodRangeToSearchParams(params, resolvedPeriod);
 
       const url = `/api/erp/analytics${params.toString() ? `?${params}` : ""}`;
       const res = await fetch(url, { cache: "no-store", signal });
@@ -124,7 +155,7 @@ export function ErpAnalyticsDashboard() {
     } finally {
       if (guard.isCurrent(reqId)) setLoading(false);
     }
-  }, [periodPreset, customFrom, customTo]);
+  }, [resolvedPeriod]);
 
   useEffect(() => {
     void load();
@@ -134,6 +165,7 @@ export function ErpAnalyticsDashboard() {
   const dataReady = !loading;
   const viewSummary = dataReady ? summary : null;
   const isInitialLoad = loading && !summary;
+  const rangeInvalid = resolvedPeriod.kind === "invalid";
 
   return (
     <div className="min-w-0 max-w-full space-y-6 p-4 sm:p-6 lg:p-8">
@@ -167,7 +199,7 @@ export function ErpAnalyticsDashboard() {
           <button
             type="button"
             onClick={() => void load()}
-            disabled={loading}
+            disabled={loading || rangeInvalid}
             className="inline-flex h-9 shrink-0 items-center gap-2 self-start rounded-lg border border-[hsl(var(--erp-border))] bg-[hsl(var(--erp-bg-card))] px-3 text-xs font-medium text-[hsl(var(--erp-fg-muted))] hover:text-[hsl(var(--erp-fg))] disabled:opacity-50"
           >
             <RefreshCw
@@ -185,7 +217,7 @@ export function ErpAnalyticsDashboard() {
             <select
               value={periodPreset}
               onChange={(e) =>
-                setPeriodPreset(e.target.value as PeriodPreset)
+                handlePresetChange(e.target.value as PeriodPreset)
               }
               className={inputClass}
             >
@@ -197,41 +229,46 @@ export function ErpAnalyticsDashboard() {
             </select>
           </div>
 
-          {periodPreset === "custom" && (
-            <>
-              <div className="flex min-w-0 flex-col gap-1.5">
-                <label className="text-[10px] font-medium uppercase tracking-wider text-[hsl(var(--erp-fg-subtle))]">
-                  Desde
-                </label>
-                <input
-                  type="date"
-                  value={customFrom}
-                  onChange={(e) => setCustomFrom(e.target.value)}
-                  className={inputClass}
-                />
-              </div>
-              <div className="flex min-w-0 flex-col gap-1.5">
-                <label className="text-[10px] font-medium uppercase tracking-wider text-[hsl(var(--erp-fg-subtle))]">
-                  Hasta
-                </label>
-                <input
-                  type="date"
-                  value={customTo}
-                  onChange={(e) => setCustomTo(e.target.value)}
-                  className={inputClass}
-                />
-              </div>
-            </>
-          )}
+          <div className="flex min-w-0 flex-col gap-1.5">
+            <label className="text-[10px] font-medium uppercase tracking-wider text-[hsl(var(--erp-fg-subtle))]">
+              Desde
+            </label>
+            <input
+              type="date"
+              value={dateFrom}
+              onChange={(e) => handleDateFromChange(e.target.value)}
+              disabled={periodPreset !== "custom"}
+              className={inputClass}
+            />
+          </div>
+          <div className="flex min-w-0 flex-col gap-1.5">
+            <label className="text-[10px] font-medium uppercase tracking-wider text-[hsl(var(--erp-fg-subtle))]">
+              Hasta
+            </label>
+            <input
+              type="date"
+              value={dateTo}
+              onChange={(e) => handleDateToChange(e.target.value)}
+              disabled={periodPreset !== "custom"}
+              className={inputClass}
+            />
+          </div>
 
           <p className="text-xs text-[hsl(var(--erp-fg-muted))] lg:pb-2">
             {periodLabel}
             {loading ? " · Actualizando…" : ""}
+            {periodPreset === "all"
+              ? " · Sin filtro de fechas en API"
+              : ""}
           </p>
         </div>
       </header>
 
-      {isInitialLoad ? (
+      {rangeInvalid ? (
+        <div className="erp-card border-amber-500/20 bg-amber-500/5 px-4 py-8 text-center text-sm text-amber-200">
+          {resolvedPeriod.message}
+        </div>
+      ) : isInitialLoad ? (
         <ErpDashboardLoading label="Cargando analytics…" />
       ) : (error || !summary) && !loading ? (
         <div className="erp-card flex flex-col items-center gap-4 border-rose-500/20 bg-rose-500/5 px-6 py-12 text-center">
