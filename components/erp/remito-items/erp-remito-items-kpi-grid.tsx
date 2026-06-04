@@ -15,6 +15,7 @@ import {
   formatAnalyticsCount,
   formatAnalyticsCurrency,
 } from "@/lib/erp/analytics-format";
+import { REMITO_ITEMS_KPI_COPY } from "@/lib/erp/remito-items-kpi-copy";
 import { cn } from "@/lib/utils";
 import type { ErpRemitoItemsSummary } from "@/types/erp";
 
@@ -48,9 +49,9 @@ export function ErpRemitoItemsKpiGrid({
     accent: KpiAccent;
   }[] = [
     {
-      label: "Total bruto prendas",
+      label: REMITO_ITEMS_KPI_COPY.brutoLista.label,
       value: formatAnalyticsCurrency(summary.totalBrutoPrendas),
-      hint: "Σ Precio Unitario",
+      hint: REMITO_ITEMS_KPI_COPY.brutoLista.hint,
       icon: Tag,
       accent: "cyan",
     },
@@ -62,37 +63,37 @@ export function ErpRemitoItemsKpiGrid({
       accent: "blue",
     },
     {
-      label: "Neto total prendas",
+      label: REMITO_ITEMS_KPI_COPY.netoPrenda.label,
       value: formatAnalyticsCurrency(summary.netoTotalPrendas),
-      hint: "Σ neto display",
+      hint: REMITO_ITEMS_KPI_COPY.netoPrenda.hint,
       icon: Wallet,
       accent: "emerald",
     },
     {
-      label: "Descuento asignado",
+      label: REMITO_ITEMS_KPI_COPY.descuento.label,
       value: formatAnalyticsCurrency(summary.descuentoTotal),
-      hint: "Σ DESCUENTO_ASIGNADO",
+      hint: REMITO_ITEMS_KPI_COPY.descuento.hint,
       icon: Percent,
       accent: "amber",
     },
     {
-      label: "Shipping asignado",
+      label: REMITO_ITEMS_KPI_COPY.shipping.label,
       value: formatAnalyticsCurrency(summary.shippingTotal),
-      hint: "Σ SHIPPING_ASIGNADO",
+      hint: REMITO_ITEMS_KPI_COPY.shipping.hint,
       icon: Truck,
       accent: "blue",
     },
     {
-      label: "Fee asignado",
+      label: REMITO_ITEMS_KPI_COPY.fee.label,
       value: formatAnalyticsCurrency(summary.feeTotal),
-      hint: "Σ FEE_ASIGNADO",
+      hint: REMITO_ITEMS_KPI_COPY.fee.hint,
       icon: DollarSign,
       accent: "violet",
     },
     {
-      label: "MP fee asignado real",
+      label: REMITO_ITEMS_KPI_COPY.mpFee.label,
       value: formatAnalyticsCurrency(summary.mpFeeAsignadoRealTotal),
-      hint: "Σ MP cost asignado",
+      hint: REMITO_ITEMS_KPI_COPY.mpFee.hint,
       icon: DollarSign,
       accent: "rose",
     },
@@ -113,6 +114,12 @@ export function ErpRemitoItemsKpiGrid({
   ];
 
   return (
+    <div className="space-y-3">
+      <p className="text-[10px] leading-relaxed text-[hsl(var(--erp-fg-muted))]">
+        Montos agregados desde REMITO_ITEMS. El neto por prenda (NETO_PRENDA) es
+        el comparable a facturación (Total Final) por remito; bruto lista y
+        descuento comercial no representan facturación total.
+      </p>
     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
       {items.map((item) => {
         const Icon = item.icon;
@@ -149,6 +156,7 @@ export function ErpRemitoItemsKpiGrid({
           </article>
         );
       })}
+    </div>
     </div>
   );
 }

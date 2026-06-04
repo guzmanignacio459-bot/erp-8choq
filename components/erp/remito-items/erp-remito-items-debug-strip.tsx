@@ -15,6 +15,10 @@ type ErpRemitoItemsDebugStripProps = {
   fetchUrl: string | null;
   dataReady: boolean;
   showRefreshing: boolean;
+  kpiNetoPrenda?: number;
+  kpiBrutoLista?: number;
+  kpiDescuento?: number;
+  sumNetoDisplayLegacy?: number;
 };
 
 export function ErpRemitoItemsDebugStrip({
@@ -30,6 +34,10 @@ export function ErpRemitoItemsDebugStrip({
   fetchUrl,
   dataReady,
   showRefreshing,
+  kpiNetoPrenda,
+  kpiBrutoLista,
+  kpiDescuento,
+  sumNetoDisplayLegacy,
 }: ErpRemitoItemsDebugStripProps) {
   const payload = {
     querySignature,
@@ -45,6 +53,11 @@ export function ErpRemitoItemsDebugStrip({
     fetchUrl,
     dataReady,
     showRefreshing,
+    kpiNetoPrenda,
+    kpiBrutoLista,
+    kpiDescuento,
+    sumNetoDisplayLegacy,
+    kpiUsesColumn: "NETO_PRENDA",
   };
 
   useEffect(() => {
@@ -62,6 +75,10 @@ export function ErpRemitoItemsDebugStrip({
     fetchUrl,
     dataReady,
     showRefreshing,
+    kpiNetoPrenda,
+    kpiBrutoLista,
+    kpiDescuento,
+    sumNetoDisplayLegacy,
   ]);
 
   return (

@@ -1,5 +1,8 @@
 /**
  * Agregaciones REMITO_ITEMS — solo sumas/groupBy sobre columnas existentes.
+ *
+ * KPI neto: usa NETO_PRENDA (columna sheet), no netoDisplay (que prioriza NETO_PRENDA_REAL).
+ * Bruto/descuento son métricas de lista y prorrateo; no comparar con Σ Total Final de REMITOS.
  */
 
 import { displayMpFeeReal } from "@/lib/erp/remito-items-mapper";
@@ -14,6 +17,11 @@ const TOP_N = 10;
 
 function units(row: ErpRemitoItemRow): number {
   return row.cantidad > 0 ? row.cantidad : 1;
+}
+
+/** Neto por prenda para KPIs — alineado con columna NETO_PRENDA del sheet. */
+export function remitoItemNetoForKpi(row: ErpRemitoItemRow): number {
+  return row.netoPrenda;
 }
 
 export function computeRemitoItemsSummary(
@@ -33,7 +41,7 @@ export function computeRemitoItemsSummary(
     const u = units(row);
     totalBrutoPrendas += row.precioUnitario * u;
     totalPrendas += u;
-    netoTotalPrendas += row.netoDisplay * u;
+    netoTotalPrendas += remitoItemNetoForKpi(row) * u;
     descuentoTotal += row.descuentoAsignado * u;
     shippingTotal += row.shippingAsignado * u;
     feeTotal += row.feeAsignado * u;
@@ -85,7 +93,7 @@ export function computeRemitoItemsProductAnalytics(
 
   for (const row of items) {
     const u = units(row);
-    const neto = row.netoDisplay * u;
+    const neto = remitoItemNetoForKpi(row) * u;
     const skuKey = row.sku || "—";
     const artKey = row.articulo || "—";
     const talleKey = row.talle || "—";

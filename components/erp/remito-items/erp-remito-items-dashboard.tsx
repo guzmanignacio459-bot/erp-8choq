@@ -289,6 +289,16 @@ export function ErpRemitoItemsDashboard() {
     [displayItems]
   );
 
+  const debugSumNetoDisplayLegacy = useMemo(() => {
+    if (!debugPanel || !dataReady) return undefined;
+    let sum = 0;
+    for (const row of displayItems) {
+      const u = row.cantidad > 0 ? row.cantidad : 1;
+      sum += row.netoDisplay * u;
+    }
+    return sum;
+  }, [debugPanel, dataReady, displayItems]);
+
   useEffect(() => {
     if (!DEV_DEBUG || !dataReady) return;
     console.debug("[remito-items] view", {
@@ -296,6 +306,8 @@ export function ErpRemitoItemsDashboard() {
       rowsLoaded: items.length,
       rowsDisplay: displayItems.length,
       kpiPrendas: displaySummary.totalPrendas,
+      kpiNetoPrenda: displaySummary.netoTotalPrendas,
+      kpiBrutoLista: displaySummary.totalBrutoPrendas,
       clientFilters: hasClientFilters,
     });
   }, [
@@ -497,6 +509,10 @@ export function ErpRemitoItemsDashboard() {
           fetchUrl={debugFetchUrl}
           dataReady={dataReady}
           showRefreshing={showRefreshing}
+          kpiNetoPrenda={displaySummary.netoTotalPrendas}
+          kpiBrutoLista={displaySummary.totalBrutoPrendas}
+          kpiDescuento={displaySummary.descuentoTotal}
+          sumNetoDisplayLegacy={debugSumNetoDisplayLegacy}
         />
       )}
 
