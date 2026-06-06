@@ -504,6 +504,11 @@ function recomputeRowTotal_(stockSh, row, headers) {
   if (idxTotal >= 0) stockSh.getRange(row, idxTotal + 1).setValue(sum);
 }
 
+function isGiftySku_(sku) {
+  const s = String(sku || '').trim().toUpperCase();
+  return s === 'GIFTY' || s.indexOf('GIFTY-') === 0;
+}
+
 function adjustStockForItems(items, sign) {
   const stockSh = getSheet(STOCK_SPREADSHEET_ID, STOCK_SHEET_NAME);
   const headers = stockSh.getRange(1,1,1,stockSh.getLastColumn()).getValues()[0];
@@ -513,6 +518,7 @@ function adjustStockForItems(items, sign) {
     const sku = rawSku.toUpperCase(); // clave para matchear STOCK MAESTRO
     const qty = Number(it.cantidad || 0);
     if (!sku || !qty) return;
+    if (isGiftySku_(sku)) return;
 
     const { size } = parseSkuParts(sku);
     if (!size) throw new Error(`SKU sin talle válido: ${sku}`);
@@ -1152,7 +1158,7 @@ const normalizeDiscountAsignado_ = (x) => {
     const aggregated = {};
     for (const it of expanded) {
       const sku = String(it.sku || "").trim().toUpperCase();
-      if (!sku) continue;
+      if (!sku || isGiftySku_(sku)) continue;
       aggregated[sku] = (aggregated[sku] || 0) + 1;
     }
 

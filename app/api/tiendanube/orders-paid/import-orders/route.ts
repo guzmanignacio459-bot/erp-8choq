@@ -333,6 +333,33 @@ function expandOrderItemsToUnitRows(order: any): { items: RemitoItemBase[]; erro
 
   for (const p of products) {
     const skuRaw = p?.sku ?? p?.variant_sku ?? p?.product_sku ?? "";
+    const skuNorm = String(skuRaw ?? "").trim().toUpperCase();
+
+    // Gift card virtual — sin talle de prenda ni stock real
+    if (skuNorm === "GIFTY") {
+      const qty = Number(p?.quantity ?? 0);
+      if (!Number.isFinite(qty) || qty <= 0) {
+        errors.push(
+          `order_id=${order?.id ?? "?"}: quantity inválida (sku=GIFTY, qty=${String(p?.quantity)})`
+        );
+        continue;
+      }
+      const precioUnitario = parseMoneyToNumber(
+        p?.price ?? p?.unit_price ?? p?.variant_price ?? p?.product_price ?? 0
+      );
+      for (let i = 0; i < qty; i++) {
+        out.push({
+          sku: "GIFTY",
+          articulo: "GIFT CARD",
+          talle: "UNICO",
+          cantidad: 1,
+          precioUnitario,
+          owner: "",
+        });
+      }
+      continue;
+    }
+
     const { sku, owner, size } = parseSkuOwnerSize(skuRaw);
 
     if (!sku) {
