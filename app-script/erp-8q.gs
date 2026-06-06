@@ -2243,17 +2243,23 @@ function handleRequest(e) {
 
     const headers = values[0].map(h => String(h || "").trim());
     const idxTN = headers.indexOf("TN_ORDER_ID");
+    const idxMpPayment = headers.indexOf("MP_PAYMENT_ID");
     if (idxTN === -1) return json_(500, { ok: false, error: "Header TN_ORDER_ID no existe" });
 
-    // buscamos exact match (string)
+    // buscamos exact match; si hay duplicados, preferir fila sin MP_PAYMENT_ID
     let row = null;
+    let rowWithMp = null;
     for (let r = 1; r < values.length; r++) {
       const v = String(values[r][idxTN] || "").trim();
-      if (v === tnOrderId) {
+      if (v !== tnOrderId) continue;
+      const mpPaymentId = idxMpPayment >= 0 ? String(values[r][idxMpPayment] || "").trim() : "";
+      if (!mpPaymentId) {
         row = values[r];
         break;
       }
+      if (!rowWithMp) rowWithMp = values[r];
     }
+    if (!row) row = rowWithMp;
 
     if (!row) return json_(200, { ok: true, found: false });
 
@@ -2557,31 +2563,68 @@ function headerMapFromSheet_(sh) {
   return map;
 }
 
-function findRemitoRowByTNOrderId_(shR, tnOrderId) {
+function findAllRemitoRowsByTNOrderId_(shR, tnOrderId) {
   const last = shR.getLastRow();
-  if (last < 2) return null;
+  if (last < 2) return [];
 
   const hdr = shR.getRange(1,1,1,shR.getLastColumn()).getValues()[0].map(h => String(h||"").trim());
   const idxDetalle = hdr.indexOf("Detalle general");
   const idxTN = hdr.indexOf("TN_ORDER_ID");
+  const idxMpPayment = hdr.indexOf("MP_PAYMENT_ID");
 
-  const values = shR.getRange(2,1,last-1,shR.getLastColumn()).getValues();
+  const values = shR.getRange(2,1,last,shR.getLastColumn()).getValues();
   const needle = String(tnOrderId||"").trim();
+  const matches = [];
 
   for (let i=0;i<values.length;i++) {
     const row = values[i];
+    let matched = false;
 
-    // 1) Preferimos columna TN_ORDER_ID si existe
     if (idxTN >= 0) {
       const v = String(row[idxTN]||"").trim();
-      if (v === needle) return i + 2;
+      if (v === needle) matched = true;
     }
 
-    // 2) Fallback: Detalle general contiene TN_ORDER_ID=xxxx
-    if (idxDetalle >= 0) {
+    if (!matched && idxDetalle >= 0) {
       const det = String(row[idxDetalle]||"");
-      if (det.includes("TN_ORDER_ID=" + needle)) return i + 2;
+      if (det.includes("TN_ORDER_ID=" + needle)) matched = true;
     }
+
+    if (matched) {
+      const mpPaymentId = idxMpPayment >= 0 ? String(row[idxMpPayment] || "").trim() : "";
+      matches.push({ sheetRow: i + 2, hasMp: Boolean(mpPaymentId) });
+    }
+  }
+
+  return matches;
+}
+
+function findRemitoRowByTNOrderId_(shR, tnOrderId) {
+  const matches = findAllRemitoRowsByTNOrderId_(shR, tnOrderId);
+  if (!matches.length) return null;
+
+  // TN duplicado: preferir remito hermano sin MP_PAYMENT_ID
+  const pending = matches.find((m) => !m.hasMp);
+  if (pending) return pending.sheetRow;
+
+  return matches[0].sheetRow;
+}
+
+function findRemitoRowByIdRemito_(shR, idRemito) {
+  const last = shR.getLastRow();
+  if (last < 2) return null;
+
+  const needle = String(idRemito || "").trim();
+  if (!needle) return null;
+
+  const hdr = shR.getRange(1,1,1,shR.getLastColumn()).getValues()[0].map(h => String(h||"").trim());
+  const idxId = hdr.indexOf("ID Remito");
+  if (idxId < 0) return null;
+
+  const values = shR.getRange(2,1,last,shR.getLastColumn()).getValues();
+  for (let i = 0; i < values.length; i++) {
+    const v = String(values[i][idxId] || "").trim();
+    if (v === needle) return i + 2;
   }
   return null;
 }
@@ -2730,9 +2773,17 @@ const HI = headerMapFromSheet_(shI);
 // ==========================
 // 2) Find remito row
 // ==========================
-const remitoRow = findRemitoRowByTNOrderId_(shR, tnOrderId);
+const idRemitoHint = String(payload?.idRemito || "").trim();
+let remitoRow = idRemitoHint
+  ? findRemitoRowByIdRemito_(shR, idRemitoHint)
+  : findRemitoRowByTNOrderId_(shR, tnOrderId);
 if (!remitoRow) {
-  return { ok: false, error: `No encontré remito para TN_ORDER_ID=${tnOrderId}` };
+  return {
+    ok: false,
+    error: idRemitoHint
+      ? `No encontré remito idRemito=${idRemitoHint}`
+      : `No encontré remito para TN_ORDER_ID=${tnOrderId}`,
+  };
 }
 
 const now = new Date();
@@ -2976,9 +3027,110 @@ setR("MP_NETO_REAL_ORDEN", totalNetoReal);
 // Opcional: sobreescribir total cost real desde items (más confiable)
 setR("MP_TOTAL_COST_REAL", Math.round((taxTotal + financingTotal + feeTotal + platformFeeTotal) * 100) / 100);
 
+  // ==========================
+  // 9) Remitos hermanos (mismo TN sin MP)
+  // ==========================
+  let siblingsUpdated = 0;
+  let siblingsItemsWritten = 0;
+  const siblingRows = findAllRemitoRowsByTNOrderId_(shR, tnOrderId).filter(function (m) {
+    return m.sheetRow !== remitoRow && !m.hasMp;
+  });
+
+  for (let si = 0; si < siblingRows.length; si++) {
+    const sibRow = siblingRows[si].sheetRow;
+    const sibSetR = function (h, v) {
+      if (HR[h]) shR.getRange(sibRow, HR[h]).setValue(v);
+    };
+
+    sibSetR("TN_ORDER_ID", tnOrderId);
+    sibSetR("MP_PAYMENT_ID", mp.paymentId);
+    sibSetR("MP_ADDITIONAL_REFERENCE", mp.additionalReference);
+    sibSetR("MP_STATUS", mp.status);
+    sibSetR("MP_STATUS_DETAIL", mp.statusDetail);
+    sibSetR("MP_DATE_CREATED", parseDateOrEmpty(mp.dateCreated));
+    sibSetR("MP_DATE_APPROVED", parseDateOrEmpty(mp.dateApproved));
+    sibSetR("MP_MONEY_RELEASE_DATE", parseDateOrEmpty(mp.moneyReleaseDate));
+    if (HR["MP_ACREDITADO_FECHA"]) {
+      const acredit =
+        parseDateOrEmpty(mp.moneyReleaseDate) || parseDateOrEmpty(mp.dateApproved);
+      sibSetR("MP_ACREDITADO_FECHA", acredit);
+    }
+    sibSetR("MP_TRANSACTION_AMOUNT", transactionAmount);
+    sibSetR("MP_NET_RECEIVED_AMOUNT", netReceivedAmount);
+    sibSetR("MP_TAX_TOTAL_REAL", taxTotal);
+    sibSetR("MP_FINANCING_TOTAL_REAL", financingTotal);
+    sibSetR("MP_FEE_TOTAL_REAL", feeTotal);
+    sibSetR("MP_PLATFORM_FEE_TOTAL_REAL", platformFeeTotal);
+    sibSetR("MP_TOTAL_COST_REAL", totalCost);
+    sibSetR("MP_NETO_REAL_ORDEN", totalNetoReal);
+    sibSetR("MP_PAYER_EMAIL", mp.payerEmail);
+    sibSetR("MP_PAYMENT_TYPE", mp.paymentType);
+    sibSetR("MP_PAYMENT_METHOD", mp.paymentMethodDisplay || mp.paymentMethod);
+    sibSetR("MP_INSTALLMENTS", mp.installments);
+    sibSetR("MP_MATCH_CONFIDENCE", 1);
+    sibSetR("MP_MATCH_RULE", "SIBLING_TN_ORDER_ID");
+    sibSetR("MP_MATCHED_AT", now);
+    sibSetR("MP_IMPORTED_AT", now);
+
+    const sibIdRemito = String(shR.getRange(sibRow, idRemitoCol).getValue() || "").trim();
+    if (!sibIdRemito) continue;
+
+    const sibRowsIdx = [];
+    const sibWeights = [];
+    for (let i = 0; i < dataI.length; i++) {
+      const rowIdStr = String(dataI[i][idxId] || "").trim();
+      if (rowIdStr === sibIdRemito) {
+        sibRowsIdx.push(i);
+        sibWeights.push(Number(dataI[i][idxPrecio] || 0) || 0);
+      }
+    }
+
+    const sibAllZero = sibWeights.every(function (w) { return (Number(w) || 0) === 0; });
+    const sibEffWeights = sibAllZero ? sibWeights.map(function () { return 1; }) : sibWeights;
+    const sibTaxC = allocateProportionalCents_(taxTotal, sibEffWeights);
+    const sibFinC = allocateProportionalCents_(financingTotal, sibEffWeights);
+    const sibFeeC = allocateProportionalCents_(feeTotal, sibEffWeights);
+    const sibPlatC = allocateProportionalCents_(platformFeeTotal, sibEffWeights);
+    const sibTotalC = sibTaxC.map(function (_, i) { return sibTaxC[i] + sibFinC[i] + sibFeeC[i] + sibPlatC[i]; });
+
+    let sibWritten = 0;
+    for (let k = 0; k < sibRowsIdx.length; k++) {
+      const rowInData = sibRowsIdx[k];
+      const sheetRowI = rowInData + 2;
+      const owner = idxOwner >= 0 ? String(dataI[rowInData][idxOwner] || "").toUpperCase().trim() : "";
+      const netoPrev = idxNeto >= 0 ? (Number(dataI[rowInData][idxNeto]) || 0) : 0;
+      const tax = fromCents(sibTaxC[k]);
+      const fin = fromCents(sibFinC[k]);
+      const fee = fromCents(sibFeeC[k]);
+      const plat = fromCents(sibPlatC[k]);
+      const tot = fromCents(sibTotalC[k]);
+      const netoRealSib = Math.round((netoPrev - tot) * 100) / 100;
+      const isScnl = (owner === "SCNL");
+      const setI = function (h, v) {
+        if (HI[h]) shI.getRange(sheetRowI, HI[h]).setValue(v);
+      };
+      setI("MP_PAYMENT_ID", mp.paymentId);
+      setI("MP_STATUS", mp.status);
+      setI("MP_INSTALLMENTS", mp.installments);
+      setI("MP_PAYMENT_TYPE", mp.paymentType);
+      setI("MP_METHOD", mp.paymentMethodDisplay || mp.paymentMethod);
+      setI("MP_TAX_ASIGNADO_REAL", tax);
+      setI("MP_FINANCING_ASIGNADO_REAL", fin);
+      setI("MP_FEE_ASIGNADO_REAL", fee);
+      setI("MP_PLATFORM_FEE_ASIGNADO_REAL", plat);
+      setI("MP_TOTAL_COST_ASIGNADO_REAL", tot);
+      setI("NETO_PRENDA_REAL", netoRealSib);
+      setI("NETO_PRENDA_SCNL", isScnl ? netoRealSib : 0);
+      setI("NETO PRENDA 8Q", isScnl ? 0 : netoRealSib);
+      sibWritten++;
+    }
+
+    siblingsUpdated++;
+    siblingsItemsWritten += sibWritten;
+  }
 
   // ==========================
-  // 8) Response
+  // 10) Response
   // ==========================
   return {
     ok: true,
@@ -2988,6 +3140,8 @@ setR("MP_TOTAL_COST_REAL", Math.round((taxTotal + financingTotal + feeTotal + pl
     idRemito,
     updatedRemitos: true,
     updatedItems: written,
+    siblingsUpdated: siblingsUpdated,
+    siblingsItemsWritten: siblingsItemsWritten,
     meta: {
       allZeroWeights,
       itemsMatched: rowsIdx.length

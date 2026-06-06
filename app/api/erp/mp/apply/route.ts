@@ -39,6 +39,7 @@ export async function POST(req: Request) {
 
   const tnOrderId = String(body?.tnOrderId ?? "").trim();
   const force = body?.force === true;
+  const idRemito = String(body?.idRemito ?? "").trim() || undefined;
 
   if (!tnOrderId) {
     return json(
@@ -56,6 +57,7 @@ export async function POST(req: Request) {
     req,
     tnOrderId,
     force,
+    idRemito,
   });
 
   const fetchedAt = new Date().toISOString();

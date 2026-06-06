@@ -159,6 +159,8 @@ export type ErpRemitoDetailResponse = {
 export type ErpMpApplyRequestBody = {
   tnOrderId: string;
   force?: boolean;
+  /** Remito hermano sin MP (TN duplicado en Mayo) */
+  idRemito?: string;
 };
 
 export type ErpMpApplyResult = {

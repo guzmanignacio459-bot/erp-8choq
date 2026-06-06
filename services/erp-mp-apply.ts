@@ -48,11 +48,13 @@ export async function applyMercadoPagoViaImportPayment(options: {
   req: Request;
   tnOrderId: string;
   force?: boolean;
+  idRemito?: string;
 }): Promise<ErpMpApplyResult> {
   const tnOrderId = options.tnOrderId.trim();
   if (!tnOrderId) {
     return { ok: false, error: "tnOrderId requerido" };
   }
+  const idRemito = options.idRemito?.trim() || undefined;
 
   const headers = buildImportPaymentHeaders();
 
@@ -75,6 +77,7 @@ export async function applyMercadoPagoViaImportPayment(options: {
       body: JSON.stringify({
         tnOrderId,
         force: options.force === true,
+        ...(idRemito ? { idRemito } : {}),
       }),
       cache: "no-store",
       signal: controller.signal,
