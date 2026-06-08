@@ -3,12 +3,13 @@
  * Versión: 2026-01-04-v6-all-skus
  ***********************/
 const API_VERSION = '2026-01-04-v6-all-skus';
-const BUILD_ID = 'ERP8Q-PROD-2026-01-12-A';
+const BUILD_ID = 'ERP8Q-PROD-2026-06-08-J3-XS';
 
 
 
 /***********************
  * CONFIG
+ 
  ***********************/
 const SPREADSHEET_ID = '1EDHbX270hNB_BoMfY2iBWJ-CRl5EJWrDKxudUJ1eGWo'; // ej: 1EDHbX...
 const SHEET_REMITOS  = 'REMITOS';
@@ -41,12 +42,29 @@ const CATALOGS = {
   estados: ['Pendiente','Pagado','Anulado']
 };
 
-// Map de talle -> índice de columna (1-based). A=SKU, B=ARTICULO, C=S, ...
+// Talles reconocidos en STOCK MAESTRO (orden de grilla)
+const VALID_STOCK_SIZES = ['XS','S','M','L','XL','XXL','XXXL'];
+
+// Map legacy talle -> columna (1-based) tras insertar XS en columna C.
+// Layout propuesto: A=SKU, B=ARTICULO, C=XS, D=S, E=M, F=L, G=XL, H=XXL, I=XXXL, J=Stock Total
+// adjustStockForItems prefiere header dinámico; esto es fallback.
 const SIZE_COL_INDEX = {
-  S:3, M:4, L:5, XL:6, XXL:7, XXXL:8,
-  "1": 3, // S
-  "2": 4  // M
+  XS:3, S:4, M:5, L:6, XL:7, XXL:8, XXXL:9,
+  "1": 4, // S (legacy)
+  "2": 5  // M (legacy)
 };
+
+function sizeColFromHeaders_(headers, size) {
+  const idx = headerIndex_(headers, size);
+  if (idx >= 0) return idx + 1;
+  return SIZE_COL_INDEX[size] || null;
+}
+
+function stockSizeColumnsFromHeaders_(headers) {
+  return VALID_STOCK_SIZES.filter(function(sz) {
+    return headerIndex_(headers, sz) >= 0;
+  });
+}
 
 /***********************
  * TIENDANUBE – CONFIG (solo para syncTNProducts)
@@ -129,11 +147,14 @@ function parseSkuParts(sku) {
     parts.pop();
   }
 
-  const validSizes = ['S','M','L','XL','XXL','XXXL'];
-  const last = parts.length ? parts[parts.length - 1].toUpperCase() : '';
-  const size = validSizes.includes(last) ? last : null;
+  for (var i = parts.length - 1; i >= 0; i--) {
+    var candidate = parts[i].toUpperCase();
+    if (VALID_STOCK_SIZES.indexOf(candidate) >= 0) {
+      return { size: candidate, owner: owner };
+    }
+  }
 
-  return { size, owner };
+  return { size: null, owner: owner };
 }
 function normalizeOwner_(owner) {
   const o = String(owner || '').trim().toUpperCase();
@@ -201,7 +222,6 @@ function normalizeSku_(sku, talle, owner) {
   const raw = String(sku || '').trim();
   if (!raw) return '';
 
-  const validSizes = ['S','M','L','XL','XXL','XXXL'];
   const t = String(talle || '').trim().toUpperCase();
   const o = String(owner || '').trim().toUpperCase();
 
@@ -217,7 +237,7 @@ function normalizeSku_(sku, talle, owner) {
   // size al final
   let hadSize = false;
   let existingSize = '';
-  if (parts.length && validSizes.includes(parts[parts.length - 1].toUpperCase())) {
+  if (parts.length && VALID_STOCK_SIZES.indexOf(parts[parts.length - 1].toUpperCase()) >= 0) {
     hadSize = true;
     existingSize = parts.pop().toUpperCase();
   }
@@ -495,10 +515,13 @@ function findSkuByArticuloTalle_(articulo, talle, owner) {
 }
 
 function recomputeRowTotal_(stockSh, row, headers) {
-  const sizes = ['S','M','L','XL','XXL','XXXL'];
+  const sizes = stockSizeColumnsFromHeaders_(headers);
   const sum = sizes
-    .map(sz => Number(stockSh.getRange(row, SIZE_COL_INDEX[sz]).getValue() || 0))
-    .reduce((a,b)=>a+b, 0);
+    .map(function(sz) {
+      var col = sizeColFromHeaders_(headers, sz);
+      return col ? Number(stockSh.getRange(row, col).getValue() || 0) : 0;
+    })
+    .reduce(function(a,b){ return a+b; }, 0);
 
   const idxTotal = headerIndex_(headers, STOCK_TOTAL_HEADER);
   if (idxTotal >= 0) stockSh.getRange(row, idxTotal + 1).setValue(sum);
@@ -526,7 +549,7 @@ function adjustStockForItems(items, sign) {
     const row = findRowBySku(stockSh, sku);
     if (!row) throw new Error(`SKU no encontrado en stock: ${sku}`);
 
-    const col = SIZE_COL_INDEX[size];
+    const col = sizeColFromHeaders_(headers, size);
     if (!col) throw new Error(`Columna no mapeada para talle ${size}`);
 
     const cell = stockSh.getRange(row, col);
@@ -820,7 +843,7 @@ function recomputeNetoUnitarioFromAllocs_(it) {
 }
 
 function expandItemLines_(raw) {
-  const sizes = ['S','M','L','XL','XXL','XXXL'];
+  const sizes = VALID_STOCK_SIZES.slice();
   const out = [];
 
   let baseSku = String(raw.sku || '').trim();
@@ -3203,11 +3226,9 @@ function parseSkuSizeForGrid_(sku) {
   const parts = String(sku).toUpperCase().split('-');
 
   // talles válidos en tu grilla
-  const VALID_SIZES = ['XS','S','M','L','XL','XXL','XXXL'];
-
   // buscamos desde el final hacia atrás
   for (let i = parts.length - 1; i >= 0; i--) {
-    if (VALID_SIZES.includes(parts[i])) {
+    if (VALID_STOCK_SIZES.indexOf(parts[i]) >= 0) {
       return { size: parts[i] };
     }
   }
@@ -3216,7 +3237,7 @@ function parseSkuSizeForGrid_(sku) {
 }
 
 function ensureStockHeadersGrid_(sh) {
-  const needed = ['SKU','ARTICULO','S','M','L','XL','XXL','XXXL','Stock Total'];
+  const needed = ['SKU','ARTICULO','XS','S','M','L','XL','XXL','XXXL','Stock Total'];
 
   if (sh.getLastRow() === 0) {
     sh.getRange(1, 1, 1, needed.length).setValues([needed]);
@@ -3320,7 +3341,7 @@ function syncStockFromTNProductsChunked_(params) {
     rowArr[H['ARTICULO']] = articulo;
 
     // talles en 0 por default (para fila nueva); para existente solo vamos a setear el talle que corresponde
-    const sizeCols = ['S','M','L','XL','XXL','XXXL'];
+    const sizeCols = VALID_STOCK_SIZES.slice();
 
     // si es fila nueva: setear todos los talles a 0 y luego el talle correcto
     // si es existente: dejamos los otros talles vacíos para NO pisarlos (los vamos a escribir por rango solo en las columnas necesarias)

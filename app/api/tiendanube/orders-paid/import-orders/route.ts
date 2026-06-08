@@ -20,7 +20,7 @@ const APPS_SCRIPT_TOKEN = (process.env.APPS_SCRIPT_TOKEN ?? "").trim();
 // ===== MP Env (para aplicar MP en el mismo import) =====
 const MP_ACCESS_TOKEN = (process.env.MP_ACCESS_TOKEN ?? "").trim();
 
-const VALID_SIZES = new Set(["S", "M", "L", "XL", "XXL", "XXXL"] as const);
+const VALID_SIZES = new Set(["XS", "S", "M", "L", "XL", "XXL", "XXXL"] as const);
 
 
 type ImportBody = {
