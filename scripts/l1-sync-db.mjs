@@ -20,6 +20,7 @@ import {
   assertSafeStagingUrl,
   applyReconciliationToDb,
   createPrisma,
+  disconnectPrisma,
   upsertErpLayer,
   upsertTnLayer,
 } from "./lib/l1-db.mjs";
@@ -121,26 +122,26 @@ async function main() {
 
   if (write) {
     assertSafeStagingUrl(process.env.DATABASE_URL);
-    const prisma = createPrisma();
+    const db = createPrisma();
     try {
       console.log("[L1] Upserting TN layer…");
-      await upsertTnLayer(prisma, tnRecords, stats);
+      await upsertTnLayer(db.prisma, tnRecords, stats);
       if (!reconcileOnly) {
         console.log("[L1] Upserting ERP layer…");
         await upsertErpLayer(
-          prisma,
+          db.prisma,
           { customers, erpOrders, erpOrderItems, payments },
           stats
         );
       }
       console.log("[L1] Applying reconciliation status to erp_orders…");
       stats.reconciliation = await applyReconciliationToDb(
-        prisma,
+        db.prisma,
         tnRecords,
         erpOrders
       );
     } finally {
-      await prisma.$disconnect();
+      await disconnectPrisma(db);
     }
   }
 
@@ -197,7 +198,23 @@ async function main() {
   }
 }
 
-main().catch((err) => {
+function logL1Error(err) {
   console.error("[L1] FAIL:", err.message);
+  const c = err.cause;
+  if (c) {
+    console.error(
+      "[L1] cause:",
+      [c.code, c.errno, c.syscall, c.hostname, c.message]
+        .filter(Boolean)
+        .join(" ")
+    );
+  }
+  if (process.env.L1_DEBUG === "1" && err.stack) {
+    console.error(err.stack);
+  }
+}
+
+main().catch((err) => {
+  logL1Error(err);
   process.exit(1);
 });

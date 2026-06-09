@@ -26,15 +26,53 @@ function tnConfig() {
   return { store, token, ua, base };
 }
 
-async function tnFetch(apiPath) {
+/** Resumen env TN sin exponer token (para diagnóstico). */
+export function tnEnvSummary() {
   const { store, token, ua, base } = tnConfig();
-  const res = await fetch(`${base}/${store}${apiPath}`, {
-    headers: {
-      Authentication: `bearer ${token}`,
-      "User-Agent": ua,
-      Accept: "application/json",
-    },
-  });
+  return {
+    storeId: store,
+    tokenPresent: Boolean(token),
+    tokenLen: token.length,
+    tokenPrefix: token.slice(0, 6),
+    userAgent: ua,
+    apiBase: base,
+  };
+}
+
+export function buildTnRequestUrl(apiPath) {
+  const { store, base } = tnConfig();
+  return `${base}/${store}${apiPath}`;
+}
+
+function formatFetchError(err, url) {
+  const parts = [`TN fetch network error url=${url}`];
+  const c = err?.cause ?? err;
+  if (c?.code) parts.push(`code=${c.code}`);
+  if (c?.errno) parts.push(`errno=${c.errno}`);
+  if (c?.syscall) parts.push(`syscall=${c.syscall}`);
+  if (c?.hostname) parts.push(`hostname=${c.hostname}`);
+  if (c?.message && c.message !== err.message) parts.push(`cause=${c.message}`);
+  return parts.join(" ");
+}
+
+async function tnFetch(apiPath, { logContext } = {}) {
+  const { token, ua } = tnConfig();
+  const url = buildTnRequestUrl(apiPath);
+  if (logContext) {
+    console.log(`[TN] ${logContext} GET ${url}`);
+  }
+  let res;
+  try {
+    res = await fetch(url, {
+      headers: {
+        Authentication: `bearer ${token}`,
+        "User-Agent": ua,
+        Accept: "application/json",
+      },
+    });
+  } catch (err) {
+    throw new Error(formatFetchError(err, url), { cause: err });
+  }
   const text = await res.text();
   let json = null;
   try {
@@ -42,15 +80,20 @@ async function tnFetch(apiPath) {
   } catch {
     /* ignore */
   }
-  return { ok: res.ok, status: res.status, text, json };
+  return { ok: res.ok, status: res.status, text, json, url };
 }
 
 export async function fetchTnOrdersPaidRange({
   createdMin,
   createdMax,
   maxPages = 100,
+  windowLabel,
 } = {}) {
   const orders = [];
+  const range =
+    createdMin || createdMax
+      ? `${createdMin ?? "…"}..${createdMax ?? "…"}`
+      : "all";
   for (let page = 1; page <= maxPages; page++) {
     const q = new URLSearchParams({
       payment_status: "paid",
@@ -59,10 +102,14 @@ export async function fetchTnOrdersPaidRange({
     });
     if (createdMin) q.set("created_at_min", createdMin);
     if (createdMax) q.set("created_at_max", createdMax);
-    const r = await tnFetch(`/orders?${q}`);
+    const r = await tnFetch(`/orders?${q}`, {
+      logContext: `window=${windowLabel ?? range} page=${page}`,
+    });
     if (!r.ok && /Last page is/i.test(r.text)) break;
     if (!r.ok) {
-      throw new Error(`TN page ${page}: ${r.status} ${r.text.slice(0, 200)}`);
+      throw new Error(
+        `TN HTTP ${r.status} window=${windowLabel ?? range} page=${page} url=${r.url} body=${r.text.slice(0, 200)}`
+      );
     }
     const batch = Array.isArray(r.json) ? r.json : [];
     if (!batch.length) break;
@@ -75,17 +122,26 @@ export async function fetchTnOrdersPaidRange({
 
 /** Merge multi-window fetch — cubre paid_at boundary + por período */
 export async function fetchTnOrdersL1Scope() {
+  console.log("[TN] env", JSON.stringify(tnEnvSummary()));
   const byId = new Map();
   const allWindows = [
-    { createdMin: TN_WIDE_CREATED_MIN, createdMax: TN_WIDE_CREATED_MAX },
+    {
+      label: "wide",
+      createdMin: TN_WIDE_CREATED_MIN,
+      createdMax: TN_WIDE_CREATED_MAX,
+    },
     ...L1_PERIODS.map((p) => {
       const w = tnCreatedWindowForPeriod(p);
-      return { createdMin: w.created_at_min, createdMax: w.created_at_max };
+      return {
+        label: p.key,
+        createdMin: w.created_at_min,
+        createdMax: w.created_at_max,
+      };
     }),
   ];
 
   for (const w of allWindows) {
-    const batch = await fetchTnOrdersPaidRange(w);
+    const batch = await fetchTnOrdersPaidRange({ ...w, windowLabel: w.label });
     for (const o of batch) {
       byId.set(String(o.id), o);
     }

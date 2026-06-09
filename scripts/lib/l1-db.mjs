@@ -2,9 +2,8 @@
  * L1 — Upsert staging DB (Prisma)
  */
 
-import { PrismaClient } from "@prisma/client";
-
 import { loadEnvLocal } from "./l0-env.mjs";
+import { createPrisma, disconnectPrisma } from "./l1-prisma.mjs";
 import { computePairStatus } from "./l1-reconcile.mjs";
 
 loadEnvLocal();
@@ -38,9 +37,7 @@ export function assertSafeStagingUrl(url) {
   return u;
 }
 
-export function createPrisma() {
-  return new PrismaClient();
-}
+export { createPrisma, disconnectPrisma };
 
 function toDate(v) {
   if (!v) return null;
