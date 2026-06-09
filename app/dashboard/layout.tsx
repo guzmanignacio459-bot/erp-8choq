@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 
 import { ErpShell } from "@/components/erp/layout/erp-shell";
 
+import "../design-system/erp-tokens.css";
 import "./dashboard.css";
 
 export const metadata: Metadata = {

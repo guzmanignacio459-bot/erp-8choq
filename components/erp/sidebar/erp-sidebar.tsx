@@ -48,7 +48,7 @@ function ErpSidebarPanel({ onClose }: ErpSidebarPanelProps) {
   return (
     <aside className="flex h-full w-[var(--erp-sidebar-w)] flex-col border-r border-[hsl(var(--erp-border))] bg-[hsl(var(--erp-bg-elevated)/0.95)] backdrop-blur-xl">
       <div className="flex h-[var(--erp-topbar-h)] shrink-0 items-center gap-3 border-b border-[hsl(var(--erp-border-subtle))] px-5">
-        <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br from-[hsl(252_95%_68%)] to-[hsl(187_85%_53%)] text-sm font-bold text-white shadow-lg shadow-violet-500/20">
+        <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br from-erp-accent to-erp-accent-dim text-sm font-bold text-erp-bg shadow-lg shadow-erp-accent/25">
           8Q
         </div>
         <div className="min-w-0 flex-1">

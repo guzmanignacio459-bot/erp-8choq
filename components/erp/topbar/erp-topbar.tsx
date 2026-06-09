@@ -67,7 +67,7 @@ export function ErpTopbar({ periodo, onMenuClick }: ErpTopbarProps) {
         </Link>
 
         <div className="flex items-center gap-2 rounded-lg border border-[hsl(var(--erp-border))] bg-[hsl(var(--erp-bg-card))] py-1.5 pl-1.5 pr-3">
-          <div className="flex h-8 w-8 items-center justify-center rounded-md bg-gradient-to-br from-violet-500/30 to-cyan-500/20 text-xs font-semibold text-[hsl(var(--erp-fg))]">
+          <div className="flex h-8 w-8 items-center justify-center rounded-md bg-gradient-to-br from-erp-accent/35 to-erp-accent-dim/20 text-xs font-semibold text-erp-fg">
             8Q
           </div>
           <div className="hidden text-left sm:block">

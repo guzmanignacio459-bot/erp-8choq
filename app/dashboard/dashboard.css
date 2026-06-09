@@ -1,35 +1,4 @@
-/* ERP 8Q — tema oscuro premium (solo dentro de .erp-shell) */
-
-.erp-shell {
-  --erp-bg: 222 47% 4%;
-  --erp-bg-elevated: 222 40% 7%;
-  --erp-bg-card: 222 38% 9%;
-  --erp-bg-hover: 222 35% 12%;
-  --erp-border: 222 20% 16%;
-  --erp-border-subtle: 222 15% 12%;
-  --erp-fg: 210 40% 98%;
-  --erp-fg-muted: 215 16% 57%;
-  --erp-fg-subtle: 215 12% 42%;
-  --erp-accent: 252 95% 68%;
-  --erp-accent-dim: 252 60% 45%;
-  --erp-cyan: 187 85% 53%;
-  --erp-emerald: 152 69% 48%;
-  --erp-sidebar-w: 260px;
-  --erp-topbar-h: 64px;
-
-  min-height: 100vh;
-  background:
-    radial-gradient(ellipse 80% 50% at 50% -20%, hsl(252 60% 20% / 0.35), transparent),
-    radial-gradient(ellipse 60% 40% at 100% 0%, hsl(187 70% 20% / 0.12), transparent),
-    hsl(var(--erp-bg));
-  color: hsl(var(--erp-fg));
-  font-feature-settings: "cv02", "cv03", "cv04", "cv11";
-}
-
-.erp-shell ::selection {
-  background: hsl(var(--erp-accent) / 0.35);
-  color: hsl(var(--erp-fg));
-}
+/* ERP 8Q — utilidades de componentes (tokens en app/design-system/erp-tokens.css) */
 
 .erp-scrollbar::-webkit-scrollbar {
   width: 6px;
@@ -49,7 +18,7 @@
 .erp-card {
   background: hsl(var(--erp-bg-card) / 0.85);
   border: 1px solid hsl(var(--erp-border));
-  border-radius: 12px;
+  border-radius: var(--erp-radius-lg);
   backdrop-filter: blur(12px);
   box-shadow:
     0 0 0 1px hsl(0 0% 100% / 0.03) inset,
@@ -70,7 +39,7 @@
     135deg,
     hsl(var(--erp-accent) / 0.25),
     transparent 40%,
-    hsl(var(--erp-cyan) / 0.1)
+    hsl(var(--erp-finance) / 0.1)
   );
   -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
   mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
@@ -79,11 +48,12 @@
   pointer-events: none;
 }
 
-.erp-kpi-accent-violet { --kpi-accent: 252 95% 68%; }
-.erp-kpi-accent-cyan { --kpi-accent: 187 85% 53%; }
+.erp-kpi-accent-brand { --kpi-accent: 24 95% 53%; }
+.erp-kpi-accent-violet { --kpi-accent: 24 95% 53%; }
+.erp-kpi-accent-cyan { --kpi-accent: 199 89% 48%; }
 .erp-kpi-accent-emerald { --kpi-accent: 152 69% 48%; }
 .erp-kpi-accent-amber { --kpi-accent: 38 92% 50%; }
-.erp-kpi-accent-rose { --kpi-accent: 350 89% 60%; }
+.erp-kpi-accent-rose { --kpi-accent: 0 72% 51%; }
 .erp-kpi-accent-blue { --kpi-accent: 217 91% 60%; }
 .erp-kpi-accent-orange { --kpi-accent: 24 95% 53%; }
 .erp-kpi-accent-pink { --kpi-accent: 330 81% 60%; }
@@ -124,7 +94,12 @@
   animation: erp-pulse-dot 2s ease-in-out infinite;
 }
 
-/* Tabla ERP — scroll horizontal contenido (no rompe viewport mobile) */
+@media (prefers-reduced-motion: reduce) {
+  .erp-live-dot {
+    animation: none;
+  }
+}
+
 .erp-table-scroll-wrap {
   -webkit-overflow-scrolling: touch;
   overscroll-behavior-x: contain;
