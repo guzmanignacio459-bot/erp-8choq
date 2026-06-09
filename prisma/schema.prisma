@@ -1,0 +1,268 @@
+// ERP 8Q v2 — FASE L: separación TN (reporting) vs ERP (procesamiento)
+// L0: schema only — sin escritura DB prod
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Enums ───────────────────────────────────────────────────────────────────
+
+/// Estado del pipeline ERP (remito / allocation)
+enum ErpProcessingStatus {
+  pending_import
+  imported
+  manual_no_tn
+  failed
+}
+
+/// Alineación TN panel/API ↔ remito ERP
+enum TnErpReconciliationStatus {
+  aligned
+  tn_only_pending_erp
+  erp_only_not_in_panel
+  mismatch_amount
+  unknown
+}
+
+// ─── A) Fuente Tiendanube (universo ventas / facturación KPI) ───────────────
+
+/// Orden tal como la reporta Tiendanube — fuente para KPIs de ventas/facturación
+model TnOrder {
+  id                  String    @id // tn_order_id
+  tnCreatedAt         DateTime? @map("tn_created_at")
+  tnPaidAt            DateTime? @map("tn_paid_at")
+  tnStatus            String?   @map("tn_status")
+  tnPaymentStatus     String?   @map("tn_payment_status")
+  tnTotal             Decimal   @default(0) @map("tn_total") @db.Decimal(14, 2)
+  tnSubtotal          Decimal?  @map("tn_subtotal") @db.Decimal(14, 2)
+  tnShipping          Decimal?  @map("tn_shipping") @db.Decimal(14, 2)
+  tnDiscount          Decimal?  @map("tn_discount") @db.Decimal(14, 2)
+  /// Panel TN / analytics la incluye en ventas del período
+  tnAnalyticsCounted  Boolean?  @map("tn_analytics_counted")
+  /// Flags: panelExcluded, cancelled, custom, boundaryTz, etc.
+  tnReportingFlags    Json?     @map("tn_reporting_flags")
+  rawTnPayload        Json?     @map("raw_tn_payload")
+  syncedAt            DateTime  @default(now()) @map("synced_at")
+  updatedAt           DateTime  @updatedAt @map("updated_at")
+
+  items    TnOrderItem[]
+  erpOrder ErpOrder?
+
+  @@index([tnPaidAt])
+  @@index([tnPaymentStatus])
+  @@index([tnAnalyticsCounted])
+  @@map("tn_orders")
+}
+
+/// Línea de producto desde API Tiendanube (sin prorrateo ERP)
+model TnOrderItem {
+  id           String   @id @default(cuid())
+  tnOrderId    String   @map("tn_order_id")
+  tnLineId     String?  @map("tn_line_id")
+  sku          String?
+  productName  String?  @map("product_name")
+  variantName  String?  @map("variant_name")
+  quantity     Int      @default(1)
+  unitPrice    Decimal  @default(0) @map("unit_price") @db.Decimal(14, 2)
+  lineTotal    Decimal  @default(0) @map("line_total") @db.Decimal(14, 2)
+  rawLine      Json?    @map("raw_line")
+
+  tnOrder TnOrder @relation(fields: [tnOrderId], references: [id], onDelete: Cascade)
+
+  @@index([tnOrderId])
+  @@index([sku])
+  @@map("tn_order_items")
+}
+
+// ─── B) Procesamiento ERP (remito, netos, MP, owner, stock) ────────────────
+
+model Customer {
+  id                 String   @id @default(cuid())
+  externalKey        String   @unique @map("external_key")
+  nombre             String
+  dni                String?
+  provinciaLocalidad String?  @map("provincia_localidad")
+  telefono           String?
+  createdAt          DateTime @default(now()) @map("created_at")
+  updatedAt          DateTime @updatedAt @map("updated_at")
+
+  erpOrders ErpOrder[]
+
+  @@map("customers")
+}
+
+/// Remito ERP — 1 fila REMITOS; cálculos internos (no reemplaza TN para KPI ventas)
+model ErpOrder {
+  id                   String                    @id // ID Remito ej. R-1780…
+  tnOrderId            String?                   @unique @map("tn_order_id")
+  customerId           String?                   @map("customer_id")
+  fechaErp             DateTime                  @map("fecha_erp")
+  processingStatus     ErpProcessingStatus       @default(pending_import) @map("processing_status")
+  reconciliationStatus TnErpReconciliationStatus @default(unknown) @map("reconciliation_status")
+  reconciliationNote   String?                   @map("reconciliation_note")
+
+  nombre               String
+  dni                  String?
+  provinciaLocalidad   String?  @map("provincia_localidad")
+  telefono             String?
+  transporte           String?
+  metodoPago           String?  @map("metodo_pago")
+  vendedor             String?
+  condicionCompra      String?  @map("condicion_compra")
+  estado               String?
+  totalPrendas         Int      @default(0) @map("total_prendas")
+
+  /// Montos ERP (post-import / allocation — distintos de tn_total para reporting)
+  subtotalErp          Decimal  @default(0) @map("subtotal_erp") @db.Decimal(14, 2)
+  shippingCustomerCost Decimal  @default(0) @map("shipping_customer_cost") @db.Decimal(14, 2)
+  envioOwner           String?  @map("envio_owner")
+  shippingOwnerCost    Decimal  @default(0) @map("shipping_owner_cost") @db.Decimal(14, 2)
+  recargoDescuento     Decimal  @default(0) @map("recargo_descuento") @db.Decimal(14, 2)
+  totalFinalErp        Decimal  @default(0) @map("total_final_erp") @db.Decimal(14, 2)
+  netoOperativo        Decimal? @map("neto_operativo") @db.Decimal(14, 2)
+
+  detalleGeneral       String?  @map("detalle_general")
+  scnlItems            String?  @map("scnl_items")
+  duenoScnlMonto       Decimal? @map("dueno_scnl_monto") @db.Decimal(14, 2)
+
+  source               String   @default("gas_backfill")
+  sheetRowHash         String?  @map("sheet_row_hash")
+  createdAt            DateTime @default(now()) @map("created_at")
+  updatedAt            DateTime @updatedAt @map("updated_at")
+
+  customer    Customer?      @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  tnOrder     TnOrder?       @relation(fields: [tnOrderId], references: [id], onDelete: SetNull)
+  items       ErpOrderItem[]
+  payments    Payment[]
+  importLogs  ImportLog[]
+  stockMoves  StockMovement[]
+
+  @@index([fechaErp])
+  @@index([estado])
+  @@index([processingStatus])
+  @@index([reconciliationStatus])
+  @@map("erp_orders")
+}
+
+/// Línea REMITO_ITEMS — prorrateo, netos, owner 8Q/SCNL
+model ErpOrderItem {
+  id                        String    @id @default(cuid())
+  erpOrderId                String    @map("erp_order_id")
+  tnOrderItemId             String?   @map("tn_order_item_id")
+  fechaErp                  DateTime? @map("fecha_erp")
+  sku                       String
+  articulo                  String?
+  talle                     String?
+  cantidad                  Int       @default(1)
+  precioUnitario            Decimal   @default(0) @map("precio_unitario") @db.Decimal(14, 2)
+  owner                     String?
+  metodoPago                String?   @map("metodo_pago")
+  descuentoAsignado         Decimal   @default(0) @map("descuento_asignado") @db.Decimal(14, 2)
+  shippingAsignado          Decimal   @default(0) @map("shipping_asignado") @db.Decimal(14, 2)
+  feeAsignado               Decimal   @default(0) @map("fee_asignado") @db.Decimal(14, 2)
+  netoPrenda                Decimal   @default(0) @map("neto_prenda") @db.Decimal(14, 2)
+  netoPrendaReal            Decimal?  @map("neto_prenda_real") @db.Decimal(14, 2)
+  mpFeeAsignadoReal         Decimal?  @map("mp_fee_asignado_real") @db.Decimal(14, 2)
+  mpPlatformFeeAsignadoReal Decimal?  @map("mp_platform_fee_asignado_real") @db.Decimal(14, 2)
+  mpTotalCostAsignadoReal   Decimal?  @map("mp_total_cost_asignado_real") @db.Decimal(14, 2)
+  netoPrendaScnl            Decimal?  @map("neto_prenda_scnl") @db.Decimal(14, 2)
+  netoPrenda8q              Decimal?  @map("neto_prenda_8q") @db.Decimal(14, 2)
+  source                    String    @default("gas_backfill")
+  createdAt                 DateTime  @default(now()) @map("created_at")
+  updatedAt                 DateTime  @updatedAt @map("updated_at")
+
+  erpOrder   ErpOrder        @relation(fields: [erpOrderId], references: [id], onDelete: Cascade)
+  stockMoves StockMovement[]
+
+  @@index([erpOrderId])
+  @@index([sku])
+  @@index([fechaErp])
+  @@map("erp_order_items")
+}
+
+/// Movimiento de stock derivado del procesamiento ERP (L1+)
+model StockMovement {
+  id             String   @id @default(cuid())
+  erpOrderId     String   @map("erp_order_id")
+  erpOrderItemId String?  @map("erp_order_item_id")
+  sku            String
+  talle          String?
+  quantity       Int
+  direction      String // out | in | adjust
+  reason         String?
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  erpOrder     ErpOrder      @relation(fields: [erpOrderId], references: [id], onDelete: Cascade)
+  erpOrderItem ErpOrderItem? @relation(fields: [erpOrderItemId], references: [id], onDelete: SetNull)
+
+  @@index([erpOrderId])
+  @@index([sku])
+  @@map("stock_movements")
+}
+
+// ─── Trazas e integraciones ──────────────────────────────────────────────────
+
+model ImportLog {
+  id            String   @id @default(cuid())
+  correlationId String?  @map("correlation_id")
+  tnOrderId     String?  @map("tn_order_id")
+  phase         String
+  status        String
+  reason        String?
+  dryRun        Boolean  @default(true) @map("dry_run")
+  elapsedMs     Int?     @map("elapsed_ms")
+  erpOrderId    String?  @map("erp_order_id")
+  payload       Json?
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  erpOrder ErpOrder? @relation(fields: [erpOrderId], references: [id], onDelete: SetNull)
+
+  @@index([tnOrderId])
+  @@index([status])
+  @@index([correlationId])
+  @@map("import_logs")
+}
+
+/// Pago Mercado Pago — capa ERP (match + netos reales)
+model Payment {
+  id                     String    @id @default(cuid())
+  erpOrderId             String    @map("erp_order_id")
+  mpPaymentId            String?   @unique @map("mp_payment_id")
+  mpAdditionalReference  String?   @map("mp_additional_reference")
+  mpMatchConfidence      String?   @map("mp_match_confidence")
+  mpMatchRule            String?   @map("mp_match_rule")
+  mpMatchedAt            DateTime? @map("mp_matched_at")
+  mpImportedAt           DateTime? @map("mp_imported_at")
+  mpStatus               String?   @map("mp_status")
+  mpStatusDetail         String?   @map("mp_status_detail")
+  mpDateCreated          DateTime? @map("mp_date_created")
+  mpDateApproved         DateTime? @map("mp_date_approved")
+  mpMoneyReleaseDate     DateTime? @map("mp_money_release_date")
+  mpAcreditadoFecha      DateTime? @map("mp_acreditado_fecha")
+  mpTransactionAmount    Decimal?  @map("mp_transaction_amount") @db.Decimal(14, 2)
+  mpNetReceivedAmount    Decimal?  @map("mp_net_received_amount") @db.Decimal(14, 2)
+  mpNetoRealOrden        Decimal?  @map("mp_neto_real_orden") @db.Decimal(14, 2)
+  mpTaxTotalReal         Decimal?  @map("mp_tax_total_real") @db.Decimal(14, 2)
+  mpFinancingTotalReal   Decimal?  @map("mp_financing_total_real") @db.Decimal(14, 2)
+  mpFeeTotalReal         Decimal?  @map("mp_fee_total_real") @db.Decimal(14, 2)
+  mpPlatformFeeTotalReal Decimal?  @map("mp_platform_fee_total_real") @db.Decimal(14, 2)
+  mpTotalCostReal        Decimal?  @map("mp_total_cost_real") @db.Decimal(14, 2)
+  mpPayerEmail           String?   @map("mp_payer_email")
+  mpPaymentType          String?   @map("mp_payment_type")
+  mpPaymentMethod        String?   @map("mp_payment_method")
+  mpInstallments         Int?      @map("mp_installments")
+  source                 String    @default("gas_backfill")
+  createdAt              DateTime  @default(now()) @map("created_at")
+  updatedAt              DateTime  @updatedAt @map("updated_at")
+
+  erpOrder ErpOrder @relation(fields: [erpOrderId], references: [id], onDelete: Cascade)
+
+  @@index([erpOrderId])
+  @@index([mpStatus])
+  @@map("payments")
+}
