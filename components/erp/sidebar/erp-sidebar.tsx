@@ -13,6 +13,7 @@ import {
   ListTree,
   Package,
   Settings,
+  ShoppingBag,
   TrendingUp,
   Users,
   X,
@@ -24,6 +25,7 @@ import { ERP_NAV_SECTIONS } from "@/components/erp/sidebar/nav-config";
 
 const ICON_MAP: Record<string, LucideIcon> = {
   "layout-dashboard": LayoutDashboard,
+  "shopping-bag": ShoppingBag,
   "trending-up": TrendingUp,
   "bar-chart-3": BarChart3,
   files: Files,

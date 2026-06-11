@@ -81,7 +81,7 @@ export async function fetchV2Orders(
 
     const rows = await prisma.tnOrder.findMany({
       where,
-      include: { erpOrder: true },
+      include: { erpOrder: { include: { payments: true } } },
       orderBy: { tnCreatedAt: "desc" },
     });
 

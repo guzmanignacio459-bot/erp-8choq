@@ -26,9 +26,11 @@ export type V2ErpOrderEnrichment = {
   nombre: string;
   metodoPago: string | null;
   transporte: string | null;
+  totalPrendas: number;
+  hasMercadoPago: boolean;
 };
 
-/** Orden comercial TN-led — grain principal L2.1 */
+/** Orden comercial TN-led — grain principal L2.1 / M2 */
 export type V2CommercialOrder = {
   tnOrderId: string;
   commercialStatus: TnCommercialStatus;
@@ -42,6 +44,15 @@ export type V2CommercialOrder = {
   tnPaidAt: string | null;
   tnAnalyticsCounted: boolean | null;
   tnReportingFlags: Record<string, unknown> | null;
+  /** M1 — denormalizado desde tn_orders */
+  customerName: string | null;
+  customerDni: string | null;
+  customerPhone: string | null;
+  provinceLocalidad: string | null;
+  paymentGateway: string | null;
+  paymentMethod: string | null;
+  shippingOption: string | null;
+  shippingOwner: string | null;
   erp: V2ErpOrderEnrichment | null;
 };
 

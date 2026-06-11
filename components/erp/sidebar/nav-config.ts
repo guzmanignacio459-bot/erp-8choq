@@ -12,6 +12,13 @@ export const ERP_NAV_SECTIONS: ErpNavSection[] = [
         icon: "layout-dashboard",
       },
       {
+        id: "orders-tn",
+        label: "Órdenes TN",
+        href: "/dashboard/orders",
+        icon: "shopping-bag",
+        badge: "V2",
+      },
+      {
         id: "ventas",
         label: "Ventas",
         href: "/dashboard/ventas",
