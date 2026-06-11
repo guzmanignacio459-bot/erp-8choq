@@ -121,6 +121,48 @@ export type V2RemitosListResponse = {
   error?: string;
 };
 
+/** Resultado sync MP por orden TN (M3.1b) */
+export type V2PaymentSyncItemResult =
+  | {
+      ok: true;
+      tnOrderId: string;
+      mpPaymentId: string;
+      action: "created" | "updated" | "skipped";
+      matchRule: string;
+      changedFields: string[];
+      source: string;
+    }
+  | {
+      ok: false;
+      tnOrderId: string;
+      error: string;
+      code: string;
+    };
+
+export type V2PaymentSyncRequest = {
+  /** Una orden TN */
+  tnOrderId?: string;
+  /** Lote (máx. 50 en staging pilot) */
+  tnOrderIds?: string[];
+  /** Modo legacy: fetch directo por MP payment id */
+  paymentId?: number | string;
+  /** Re-fetch MP aunque ya esté sincronizado */
+  force?: boolean;
+};
+
+export type V2PaymentSyncResponse = {
+  ok: boolean;
+  results: V2PaymentSyncItemResult[];
+  count: number;
+  synced: number;
+  skipped: number;
+  failed: number;
+  fetchedAt: string;
+  source: "neon-staging";
+  urlMeta?: V2DbUrlMeta;
+  error?: string;
+};
+
 export type L2CompareRemitosReport = {
   generatedAt: string;
   scope: { from: string; to: string };

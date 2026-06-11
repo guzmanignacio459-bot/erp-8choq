@@ -17,6 +17,7 @@
     "l1:db:push": "node scripts/l1-db-push.mjs",
     "m1:db:push": "node scripts/m1-db-push.mjs",
     "m3:mp:backfill": "node scripts/m3-mp-backfill-tn-link.mjs",
+    "m3:mp:sync:pilot": "node scripts/m3-mp-sync-pilot.mjs",
     "l1:staging:server": "node scripts/l1-start-staging-server.mjs",
     "l1:verify:db": "node scripts/l1-verify-db.mjs",
     "l2:compare:remitos": "node scripts/l2-compare-remitos.mjs"
