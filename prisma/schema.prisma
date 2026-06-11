@@ -1,5 +1,6 @@
-// ERP 8Q v2 — FASE L + M1 TN-first ecommerce
+// ERP 8Q v2 — FASE L + M1 TN-first ecommerce + M4 unit grain
 // M1: tn_orders entidad principal ecommerce; erp_orders = manual/interno/legacy
+// M4: tn_order_item_units (1 prenda = 1 fila) — ver docs/erp-m4-tn-item-units-adr.md
 // Ver docs/erp-m0-tn-first-adr.md
 
 generator client {
@@ -109,6 +110,7 @@ model TnOrder {
   updatedAt           DateTime  @updatedAt @map("updated_at")
 
   items        TnOrderItem[]
+  itemUnits    TnOrderItemUnit[]
   allocations  TnOrderItemAllocation[]
   payments     Payment[]
   stockMoves   StockMovement[]
@@ -140,6 +142,7 @@ model TnOrderItem {
   owner        String?
 
   tnOrder     TnOrder                  @relation(fields: [tnOrderId], references: [id], onDelete: Cascade)
+  units       TnOrderItemUnit[]
   allocations TnOrderItemAllocation[]
   stockMoves  StockMovement[]
 
@@ -148,7 +151,38 @@ model TnOrderItem {
   @@map("tn_order_items")
 }
 
-/// Prorrateo / netos por línea TN — stub M1 (sin motor de cálculo aún)
+/// Unidad física (1 prenda = 1 fila) — grain operativo M4 / paridad GAS REMITO_ITEMS
+model TnOrderItemUnit {
+  id            String   @id @default(cuid())
+  tnOrderId     String   @map("tn_order_id")
+  tnOrderItemId String   @map("tn_order_item_id")
+  /// Índice 0..quantity-1 dentro de la línea TN
+  unitIndex     Int      @map("unit_index")
+  sku           String?
+  talle         String?
+  /// Owner inferido del SKU (8Q | SCNL) — M4.4 puede refinar desde STOCK MAESTRO
+  owner         String?
+  unitPrice     Decimal  @default(0) @map("unit_price") @db.Decimal(14, 2)
+  isGifty       Boolean  @default(false) @map("is_gifty")
+  /// false para GIFTY u otros no deducibles de STOCK MAESTRO
+  isStockable   Boolean  @default(true) @map("is_stockable")
+  parseWarnings Json?    @map("parse_warnings")
+  source        String   @default("m4_unit_expand")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  tnOrder     TnOrder         @relation(fields: [tnOrderId], references: [id], onDelete: Cascade)
+  tnOrderItem TnOrderItem     @relation(fields: [tnOrderItemId], references: [id], onDelete: Cascade)
+  stockMoves  StockMovement[]
+
+  @@unique([tnOrderItemId, unitIndex])
+  @@index([tnOrderId])
+  @@index([sku])
+  @@index([isStockable])
+  @@map("tn_order_item_units")
+}
+
+/// Prorrateo / netos por línea TN — stub M1 (M4.2 migrará grain a unit — ver ADR M4)
 model TnOrderItemAllocation {
   id                        String   @id @default(cuid())
   tnOrderId                 String   @map("tn_order_id")
@@ -286,25 +320,28 @@ model ErpOrderItem {
 
 /// Movimiento de stock — polimórfico TN (ecommerce) o ERP (manual) — stub M1
 model StockMovement {
-  id             String   @id @default(cuid())
-  tnOrderId      String?  @map("tn_order_id")
-  tnOrderItemId  String?  @map("tn_order_item_id")
-  erpOrderId     String?  @map("erp_order_id")
-  erpOrderItemId String?  @map("erp_order_item_id")
-  sku            String
-  talle          String?
-  quantity       Int
-  direction      String // out | in | adjust
-  reason         String?
-  source         String   @default("pending_engine")
-  createdAt      DateTime @default(now()) @map("created_at")
+  id                String   @id @default(cuid())
+  tnOrderId         String?  @map("tn_order_id")
+  tnOrderItemId     String?  @map("tn_order_item_id")
+  tnOrderItemUnitId String?  @map("tn_order_item_unit_id")
+  erpOrderId        String?  @map("erp_order_id")
+  erpOrderItemId    String?  @map("erp_order_item_id")
+  sku               String
+  talle             String?
+  quantity          Int
+  direction         String // out | in | adjust
+  reason            String?
+  source            String   @default("pending_engine")
+  createdAt         DateTime @default(now()) @map("created_at")
 
-  tnOrder      TnOrder?      @relation(fields: [tnOrderId], references: [id], onDelete: Cascade)
-  tnOrderItem  TnOrderItem?  @relation(fields: [tnOrderItemId], references: [id], onDelete: SetNull)
-  erpOrder     ErpOrder?     @relation(fields: [erpOrderId], references: [id], onDelete: Cascade)
-  erpOrderItem ErpOrderItem? @relation(fields: [erpOrderItemId], references: [id], onDelete: SetNull)
+  tnOrder         TnOrder?         @relation(fields: [tnOrderId], references: [id], onDelete: Cascade)
+  tnOrderItem     TnOrderItem?     @relation(fields: [tnOrderItemId], references: [id], onDelete: SetNull)
+  tnOrderItemUnit TnOrderItemUnit? @relation(fields: [tnOrderItemUnitId], references: [id], onDelete: SetNull)
+  erpOrder        ErpOrder?        @relation(fields: [erpOrderId], references: [id], onDelete: Cascade)
+  erpOrderItem    ErpOrderItem?    @relation(fields: [erpOrderItemId], references: [id], onDelete: SetNull)
 
   @@index([tnOrderId])
+  @@index([tnOrderItemUnitId])
   @@index([erpOrderId])
   @@index([sku])
   @@map("stock_movements")

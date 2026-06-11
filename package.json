@@ -16,6 +16,8 @@
     "l1:sync:write": "node scripts/l1-sync-db.mjs --write",
     "l1:db:push": "node scripts/l1-db-push.mjs",
     "m1:db:push": "node scripts/m1-db-push.mjs",
+    "m4:db:push": "node scripts/m4-db-push.mjs",
+    "m4:expand:units": "node scripts/m4-expand-tn-units.mjs",
     "m3:mp:backfill": "node scripts/m3-mp-backfill-tn-link.mjs",
     "m3:mp:sync:pilot": "node scripts/m3-mp-sync-pilot.mjs",
     "m3:mp:refresh": "node scripts/m3-mp-refresh.mjs",

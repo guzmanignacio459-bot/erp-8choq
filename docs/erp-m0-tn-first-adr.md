@@ -64,7 +64,7 @@ L2.3 live sync (TN → remito ERP obligatorio) queda **pausado**.
 | **M1** ✓ | Schema TN-first staging (`prisma/schema.prisma`, `m1:db:push`) |
 | M2 | UI staging reorientada (`/dashboard/orders` TN-led) |
 | M3 | MP ecommerce en `tn_orders` / `payments.tn_order_id` |
-| M4 | Allocations + stock TN (lógica) |
+| M4 | Allocations + stock TN (lógica) — ver [erp-m4-tn-item-units-adr.md](./erp-m4-tn-item-units-adr.md) |
 | M5 | CRUD remitos manuales ERP V2 |
 | M6 | Corte GAS ecommerce (prod, con aprobación) |
 

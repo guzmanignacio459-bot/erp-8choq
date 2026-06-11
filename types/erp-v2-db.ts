@@ -73,7 +73,23 @@ export type TnOrderSnapshot = {
   stockDeductedAt?: string | null;
 };
 
-/** Prorrateo por línea TN — stub M1 */
+/** Unidad física (1 prenda) — M4.1 grain operativo */
+export type TnOrderItemUnitSnapshot = {
+  id: string;
+  tnOrderId: string;
+  tnOrderItemId: string;
+  unitIndex: number;
+  sku?: string | null;
+  talle?: string | null;
+  owner?: string | null;
+  unitPrice: number;
+  isGifty?: boolean;
+  isStockable?: boolean;
+  parseWarnings?: string[] | null;
+  source?: string;
+};
+
+/** Prorrateo por línea TN — stub M1 (M4.2 → grain unit) */
 export type TnOrderItemAllocationSnapshot = {
   tnOrderId: string;
   tnOrderItemId: string;
