@@ -1,6 +1,6 @@
 /**
- * Tipos TypeScript — modelo DB ERP v2 (FASE L)
- * Ver docs/erp-l1-data-model.md y prisma/schema.prisma
+ * Tipos TypeScript — modelo DB ERP v2 (FASE L + M1 TN-first)
+ * Ver docs/erp-l1-data-model.md, docs/erp-m0-tn-first-adr.md, prisma/schema.prisma
  */
 
 export type ErpProcessingStatus =
@@ -16,9 +16,35 @@ export type TnErpReconciliationStatus =
   | "mismatch_amount"
   | "unknown";
 
-/** Snapshot Tiendanube (capa A) */
+export type TnOrderChannel = "ecommerce";
+
+export type TnCommercialStatus =
+  | "activo"
+  | "cancelado"
+  | "reembolsado"
+  | "pendiente";
+
+export type TnFulfillmentStatus =
+  | "pending"
+  | "processing"
+  | "shipped"
+  | "delivered"
+  | "cancelled";
+
+/** Origen remito ERP — no incluye ecommerce obligatorio */
+export type ErpOrderSource =
+  | "legacy_gas_import"
+  | "manual"
+  | "wholesale"
+  | "showroom"
+  | "internal";
+
+/** Snapshot Tiendanube — entidad principal ecommerce (M1) */
 export type TnOrderSnapshot = {
   id: string;
+  channel?: TnOrderChannel;
+  commercialStatus?: TnCommercialStatus | null;
+  commercialStatusAt?: string | null;
   tnCreatedAt?: string | null;
   tnPaidAt?: string | null;
   tnStatus?: string | null;
@@ -30,11 +56,42 @@ export type TnOrderSnapshot = {
   tnAnalyticsCounted?: boolean | null;
   tnReportingFlags?: Record<string, unknown> | null;
   rawTnPayload?: Record<string, unknown> | null;
+  customerName?: string | null;
+  customerDni?: string | null;
+  customerPhone?: string | null;
+  provinceLocalidad?: string | null;
+  paymentGateway?: string | null;
+  paymentMethod?: string | null;
+  shippingOption?: string | null;
+  shippingOwner?: string | null;
+  mpPaymentId?: string | null;
+  netoMpOrden?: number | null;
+  mpFeeTotal?: number | null;
+  mpCostTotal?: number | null;
+  fulfillmentStatus?: TnFulfillmentStatus | null;
+  allocatedAt?: string | null;
+  stockDeductedAt?: string | null;
 };
 
-/** Remito ERP (capa B) — shape backfill L0 */
+/** Prorrateo por línea TN — stub M1 */
+export type TnOrderItemAllocationSnapshot = {
+  tnOrderId: string;
+  tnOrderItemId: string;
+  discountAllocated?: number;
+  shippingAllocated?: number;
+  feeAllocated?: number;
+  netoPrenda?: number;
+  netoPrendaReal?: number | null;
+  owner?: string | null;
+  netoPrendaScnl?: number | null;
+  netoPrenda8q?: number | null;
+  source?: string;
+};
+
+/** Remito ERP — manual / interno / legacy (capa B) */
 export type ErpOrderSnapshot = {
   id: string;
+  orderSource?: ErpOrderSource;
   tnOrderId?: string | null;
   fecha: string | null;
   fechaErp?: string | null;

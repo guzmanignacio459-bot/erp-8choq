@@ -7,28 +7,35 @@
  * - Nunca usa prisma db push directo (evita DefineEnum duplicado en re-runs).
  */
 import { spawnSync } from "child_process";
+import path from "path";
+import { fileURLToPath } from "url";
 import pg from "pg";
 
 import { loadEnvLocal } from "./lib/l0-env.mjs";
 
-loadEnvLocal();
+const isMain =
+  process.argv[1] &&
+  fileURLToPath(import.meta.url) === path.resolve(process.argv[1]);
+
+if (isMain) loadEnvLocal();
 
 const SKIP_PG_CODES = new Set([
   "42710", // duplicate_object (enum, constraint, …)
   "42P07", // duplicate_table
   "42701", // duplicate_column
   "42P06", // duplicate_schema
+  "23505", // unique_violation (enum type race / partial re-run)
 ]);
 
 function runMigrateDiff(args) {
   return spawnSync("npx", ["prisma", "migrate", "diff", ...args, "--script"], {
     encoding: "utf8",
     env: process.env,
-    shell: true,
+    shell: false,
   });
 }
 
-function generatePushSql(url) {
+export function generatePushSql(url) {
   const incremental = runMigrateDiff([
     "--from-url",
     url,
@@ -37,9 +44,9 @@ function generatePushSql(url) {
   ]);
 
   if (incremental.status === 0) {
-    const sql = incremental.stdout.trim();
-    if (sql) {
-      return { sql, mode: "incremental" };
+    const raw = incremental.stdout.trim();
+    if (raw) {
+      return { sql: idempotentSql(raw), mode: "incremental-idempotent" };
     }
     return { sql: "", mode: "noop" };
   }
@@ -141,9 +148,9 @@ export function splitSqlStatements(sql) {
   return statements;
 }
 
-async function applyPushSql(url, sql, mode) {
+export async function applyPushSql(url, sql, mode, label = "L1 db push") {
   if (!sql) {
-    console.log("[L1 db push] schema already in sync (no diff)");
+    console.log(`[${label}] schema already in sync (no diff)`);
     return;
   }
 
@@ -161,14 +168,14 @@ async function applyPushSql(url, sql, mode) {
       } catch (e) {
         if (SKIP_PG_CODES.has(e.code)) {
           skipped++;
-          console.log(`[L1 db push] skip ${e.code}: ${stmt.slice(0, 72).replace(/\s+/g, " ")}…`);
+          console.log(`[${label}] skip ${e.code}: ${stmt.slice(0, 72).replace(/\s+/g, " ")}…`);
           continue;
         }
         throw e;
       }
     }
     console.log(
-      `[L1 db push] OK mode=${mode} statements=${statements.length} applied=${applied} skipped=${skipped}`
+      `[${label}] OK mode=${mode} statements=${statements.length} applied=${applied} skipped=${skipped}`
     );
   } finally {
     await client.end();
@@ -186,7 +193,9 @@ async function main() {
   await applyPushSql(url, sql, mode);
 }
 
-main().catch((e) => {
-  console.error(e);
-  process.exit(1);
-});
+if (isMain) {
+  main().catch((e) => {
+    console.error(e);
+    process.exit(1);
+  });
+}

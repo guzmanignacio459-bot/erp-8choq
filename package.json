@@ -15,6 +15,7 @@
     "l1:sync": "node scripts/l1-sync-db.mjs",
     "l1:sync:write": "node scripts/l1-sync-db.mjs --write",
     "l1:db:push": "node scripts/l1-db-push.mjs",
+    "m1:db:push": "node scripts/m1-db-push.mjs",
     "l1:staging:server": "node scripts/l1-start-staging-server.mjs",
     "l1:verify:db": "node scripts/l1-verify-db.mjs",
     "l2:compare:remitos": "node scripts/l2-compare-remitos.mjs"

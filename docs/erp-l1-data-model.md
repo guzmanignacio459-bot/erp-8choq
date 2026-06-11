@@ -111,6 +111,22 @@ Reglas de detección (L1 reconcile job):
 
 ---
 
+## M1 — TN-first ecommerce (staging)
+
+**ADR:** [erp-m0-tn-first-adr.md](./erp-m0-tn-first-adr.md)
+
+| Cambio | Detalle |
+|--------|---------|
+| Entidad principal ecommerce | `tn_orders` — no remito ERP obligatorio |
+| `erp_orders.order_source` | `legacy_gas_import` \| `manual` \| `wholesale` \| `showroom` \| `internal` |
+| `tn_order_item_allocations` | Stub prorrateo por línea TN (motor M4+) |
+| `payments` / `stock_movements` | Polimórficos: `tn_order_id` **o** `erp_order_id` |
+| `tn_only_pending_erp` | Auditoría histórica; **no** gap operativo ecommerce |
+
+**Push staging:** `npm run m1:db:push` (requiere `DATABASE_URL` Neon staging).
+
+---
+
 ## Fuera de alcance (sin cambio)
 
 - Dashboard prod (sigue GAS)
