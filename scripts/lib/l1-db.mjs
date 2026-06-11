@@ -2,6 +2,7 @@
  * L1 — Upsert staging DB (Prisma)
  */
 
+import { denormTnMpHeaders } from "./m3-mp-denorm.mjs";
 import { loadEnvLocal } from "./l0-env.mjs";
 import { createPrisma, disconnectPrisma } from "./l1-prisma.mjs";
 import { computePairStatus } from "./l1-reconcile.mjs";
@@ -219,25 +220,43 @@ export async function upsertErpLayer(
     }
   }
 
+  const tnOrderIdByErpId = new Map(
+    erpOrders
+      .filter((o) => o.tnOrderId)
+      .map((o) => [o.id, o.tnOrderId])
+  );
+
+  const touchedTnOrderIds = [];
+
   for (const p of payments) {
     if (!p.erpOrderId) continue;
+    const tnOrderId =
+      p.tnOrderId ?? tnOrderIdByErpId.get(p.erpOrderId) ?? null;
+    const payload = { ...p, erpOrderId: p.erpOrderId, tnOrderId };
+
     if (p.mpPaymentId) {
       await prisma.payment.upsert({
         where: { mpPaymentId: p.mpPaymentId },
-        create: { ...p, erpOrderId: p.erpOrderId },
-        update: { ...p, erpOrderId: p.erpOrderId },
+        create: payload,
+        update: payload,
       });
     } else {
       const existing = await prisma.payment.findFirst({
         where: { erpOrderId: p.erpOrderId },
       });
       if (existing) {
-        await prisma.payment.update({ where: { id: existing.id }, data: p });
+        await prisma.payment.update({ where: { id: existing.id }, data: payload });
       } else {
-        await prisma.payment.create({ data: p });
+        await prisma.payment.create({ data: payload });
       }
     }
+    if (tnOrderId) touchedTnOrderIds.push(tnOrderId);
     stats.payments.upserted++;
+  }
+
+  if (touchedTnOrderIds.length) {
+    const denorm = await denormTnMpHeaders(prisma, touchedTnOrderIds);
+    stats.paymentsTnDenorm = denorm.updated;
   }
 }
 
