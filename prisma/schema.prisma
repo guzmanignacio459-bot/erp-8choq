@@ -171,8 +171,9 @@ model TnOrderItemUnit {
   createdAt     DateTime @default(now()) @map("created_at")
   updatedAt     DateTime @updatedAt @map("updated_at")
 
-  tnOrder     TnOrder         @relation(fields: [tnOrderId], references: [id], onDelete: Cascade)
-  tnOrderItem TnOrderItem     @relation(fields: [tnOrderItemId], references: [id], onDelete: Cascade)
+  tnOrder     TnOrder                @relation(fields: [tnOrderId], references: [id], onDelete: Cascade)
+  tnOrderItem TnOrderItem            @relation(fields: [tnOrderItemId], references: [id], onDelete: Cascade)
+  allocation  TnOrderItemAllocation?
   stockMoves  StockMovement[]
 
   @@unique([tnOrderItemId, unitIndex])
@@ -182,31 +183,34 @@ model TnOrderItemUnit {
   @@map("tn_order_item_units")
 }
 
-/// Prorrateo / netos por línea TN — stub M1 (M4.2 migrará grain a unit — ver ADR M4)
+/// Prorrateo comercial por unidad TN — M4.2 (grain = tn_order_item_units)
 model TnOrderItemAllocation {
   id                        String   @id @default(cuid())
   tnOrderId                 String   @map("tn_order_id")
+  /// Denorm — línea TN origen
   tnOrderItemId             String   @map("tn_order_item_id")
+  tnOrderItemUnitId         String   @unique @map("tn_order_item_unit_id")
   discountAllocated         Decimal  @default(0) @map("discount_allocated") @db.Decimal(14, 2)
   shippingAllocated         Decimal  @default(0) @map("shipping_allocated") @db.Decimal(14, 2)
   feeAllocated              Decimal  @default(0) @map("fee_allocated") @db.Decimal(14, 2)
   netoPrenda                Decimal  @default(0) @map("neto_prenda") @db.Decimal(14, 2)
-  netoPrendaReal            Decimal? @map("neto_prenda_real") @db.Decimal(14, 2)
-  mpFeeAllocatedReal        Decimal? @map("mp_fee_allocated_real") @db.Decimal(14, 2)
+  netoPrendaReal            Decimal?  @map("neto_prenda_real") @db.Decimal(14, 2)
+  mpFeeAllocatedReal        Decimal?  @map("mp_fee_allocated_real") @db.Decimal(14, 2)
   mpPlatformFeeAllocatedReal Decimal? @map("mp_platform_fee_allocated_real") @db.Decimal(14, 2)
-  mpTotalCostAllocatedReal  Decimal? @map("mp_total_cost_allocated_real") @db.Decimal(14, 2)
+  mpTotalCostAllocatedReal  Decimal?  @map("mp_total_cost_allocated_real") @db.Decimal(14, 2)
   owner                     String?
-  netoPrendaScnl            Decimal? @map("neto_prenda_scnl") @db.Decimal(14, 2)
-  netoPrenda8q              Decimal? @map("neto_prenda_8q") @db.Decimal(14, 2)
-  source                    String   @default("pending_engine")
+  netoPrendaScnl            Decimal?  @map("neto_prenda_scnl") @db.Decimal(14, 2)
+  netoPrenda8q              Decimal?  @map("neto_prenda_8q") @db.Decimal(14, 2)
+  source                    String   @default("m4_commercial_engine")
   createdAt                 DateTime @default(now()) @map("created_at")
   updatedAt                 DateTime @updatedAt @map("updated_at")
 
-  tnOrder     TnOrder     @relation(fields: [tnOrderId], references: [id], onDelete: Cascade)
-  tnOrderItem TnOrderItem @relation(fields: [tnOrderItemId], references: [id], onDelete: Cascade)
+  tnOrder         TnOrder         @relation(fields: [tnOrderId], references: [id], onDelete: Cascade)
+  tnOrderItem     TnOrderItem     @relation(fields: [tnOrderItemId], references: [id], onDelete: Cascade)
+  tnOrderItemUnit TnOrderItemUnit @relation(fields: [tnOrderItemUnitId], references: [id], onDelete: Cascade)
 
-  @@unique([tnOrderItemId])
   @@index([tnOrderId])
+  @@index([tnOrderItemId])
   @@map("tn_order_item_allocations")
 }
 

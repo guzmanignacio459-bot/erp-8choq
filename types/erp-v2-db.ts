@@ -89,10 +89,11 @@ export type TnOrderItemUnitSnapshot = {
   source?: string;
 };
 
-/** Prorrateo por línea TN — stub M1 (M4.2 → grain unit) */
+/** Prorrateo comercial por unidad TN — M4.2 */
 export type TnOrderItemAllocationSnapshot = {
   tnOrderId: string;
   tnOrderItemId: string;
+  tnOrderItemUnitId: string;
   discountAllocated?: number;
   shippingAllocated?: number;
   feeAllocated?: number;

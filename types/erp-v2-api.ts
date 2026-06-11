@@ -163,6 +163,72 @@ export type V2PaymentSyncResponse = {
   error?: string;
 };
 
+export type V2CommercialValidationFailure = {
+  check: "V-C1" | "V-C2" | "V-C3" | "V-C4" | "V-C5" | "V-C6";
+  message: string;
+  expected?: number;
+  actual?: number;
+  delta?: number;
+};
+
+export type V2CommercialValidation = {
+  passed: boolean;
+  failures: V2CommercialValidationFailure[];
+  sums: {
+    discount: number;
+    shipping: number;
+    fee: number;
+    netoPrenda: number;
+    unitPrice: number;
+  };
+  audit: {
+    poolDiscountInferred: number;
+    shippingPaidCustomer: number;
+    closureDelta: number;
+  };
+};
+
+export type V2CommercialAllocateItemResult =
+  | {
+      ok: true;
+      tnOrderId: string;
+      action: "created" | "updated";
+      unitCount: number;
+      validation: V2CommercialValidation;
+    }
+  | {
+      ok: false;
+      tnOrderId: string;
+      error: string;
+      code: string;
+      validation?: V2CommercialValidation;
+    };
+
+export type V2CommercialAllocateRequest = {
+  tnOrderId?: string;
+  tnOrderIds?: string[];
+  dryRun?: boolean;
+};
+
+export type V2CommercialAllocateResponse = {
+  ok: boolean;
+  results: V2CommercialAllocateItemResult[];
+  count: number;
+  allocated: number;
+  failed: number;
+  units: number;
+  validationFailures: Array<{
+    check: V2CommercialValidationFailure["check"];
+    count: number;
+    orders: string[];
+  }>;
+  fetchedAt: string;
+  source: "neon-staging";
+  urlMeta?: V2DbUrlMeta;
+  dryRun?: boolean;
+  error?: string;
+};
+
 export type L2CompareRemitosReport = {
   generatedAt: string;
   scope: { from: string; to: string };
