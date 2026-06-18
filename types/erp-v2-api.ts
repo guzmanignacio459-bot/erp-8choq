@@ -177,14 +177,13 @@ export type V2CommercialValidation = {
   sums: {
     discount: number;
     shipping: number;
-    fee: number;
-    netoPrenda: number;
-    unitPrice: number;
+    grossUnitAmount: number;
+    netCommercialAmount: number;
   };
   audit: {
+    tnDiscount: number;
     poolDiscountInferred: number;
-    shippingPaidCustomer: number;
-    closureDelta: number;
+    discountInferenceDelta: number;
   };
 };
 

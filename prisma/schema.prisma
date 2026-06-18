@@ -190,9 +190,12 @@ model TnOrderItemAllocation {
   /// Denorm — línea TN origen
   tnOrderItemId             String   @map("tn_order_item_id")
   tnOrderItemUnitId         String   @unique @map("tn_order_item_unit_id")
+  /// Denorm — precio bruto unitario (gross_unit_amount)
+  grossUnitAmount           Decimal  @default(0) @map("gross_unit_amount") @db.Decimal(14, 2)
   discountAllocated         Decimal  @default(0) @map("discount_allocated") @db.Decimal(14, 2)
   shippingAllocated         Decimal  @default(0) @map("shipping_allocated") @db.Decimal(14, 2)
   feeAllocated              Decimal  @default(0) @map("fee_allocated") @db.Decimal(14, 2)
+  /// net_commercial_amount (neto prenda comercial TN)
   netoPrenda                Decimal  @default(0) @map("neto_prenda") @db.Decimal(14, 2)
   netoPrendaReal            Decimal?  @map("neto_prenda_real") @db.Decimal(14, 2)
   mpFeeAllocatedReal        Decimal?  @map("mp_fee_allocated_real") @db.Decimal(14, 2)
@@ -201,7 +204,7 @@ model TnOrderItemAllocation {
   owner                     String?
   netoPrendaScnl            Decimal?  @map("neto_prenda_scnl") @db.Decimal(14, 2)
   netoPrenda8q              Decimal?  @map("neto_prenda_8q") @db.Decimal(14, 2)
-  source                    String   @default("m4_commercial_engine")
+  source                    String   @default("m4_commercial_allocation")
   createdAt                 DateTime @default(now()) @map("created_at")
   updatedAt                 DateTime @updatedAt @map("updated_at")
 

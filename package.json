@@ -19,6 +19,7 @@
     "m4:db:push": "node scripts/m4-db-push.mjs",
     "m4:expand:units": "node scripts/m4-expand-tn-units.mjs",
     "m4:allocate:commercial:pilot": "npx tsx scripts/m4-allocate-commercial-pilot-direct.ts",
+    "m4:allocate:commercial:backfill": "npx tsx scripts/m4-allocate-commercial-backfill.ts",
     "m3:mp:backfill": "node scripts/m3-mp-backfill-tn-link.mjs",
     "m3:mp:sync:pilot": "node scripts/m3-mp-sync-pilot.mjs",
     "m3:mp:refresh": "node scripts/m3-mp-refresh.mjs",

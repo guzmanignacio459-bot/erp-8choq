@@ -94,6 +94,7 @@ export type TnOrderItemAllocationSnapshot = {
   tnOrderId: string;
   tnOrderItemId: string;
   tnOrderItemUnitId: string;
+  grossUnitAmount?: number;
   discountAllocated?: number;
   shippingAllocated?: number;
   feeAllocated?: number;

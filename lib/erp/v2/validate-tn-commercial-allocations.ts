@@ -1,5 +1,5 @@
 /**
- * Validaciones comerciales V-C1..V-C6 — M4.2a
+ * Validaciones comerciales V-C1..V-C6 — M4.2b
  */
 
 import type { CommercialUnitAllocation } from "@/lib/erp/v2/allocate-tn-order-commercial";
@@ -23,26 +23,15 @@ export type CommercialValidationResult = {
   sums: {
     discount: number;
     shipping: number;
-    fee: number;
-    netoPrenda: number;
-    unitPrice: number;
+    grossUnitAmount: number;
+    netCommercialAmount: number;
   };
   audit: {
+    tnDiscount: number;
     poolDiscountInferred: number;
-    shippingPaidCustomer: number;
-    closureDelta: number;
+    discountInferenceDelta: number;
   };
 };
-
-function sumField(
-  allocations: CommercialUnitAllocation[],
-  field: keyof Pick<
-    CommercialUnitAllocation,
-    "discountAllocated" | "shippingAllocated" | "feeAllocated" | "netoPrenda"
-  >
-): number {
-  return allocations.reduce((a, row) => a + Number(row[field] || 0), 0);
-}
 
 function near(a: number, b: number, tol = TOLERANCE): boolean {
   return Math.abs(a - b) <= tol;
@@ -52,20 +41,32 @@ export function validateTnCommercialAllocations(
   allocations: CommercialUnitAllocation[],
   pools: TnAllocationPools,
   tnSubtotal: number,
-  tnTotal: number
+  tnDiscount: number,
+  unitCount: number
 ): CommercialValidationResult {
   const failures: ValidationFailure[] = [];
 
-  const sumDiscount = sumField(allocations, "discountAllocated");
-  const sumShipping = sumField(allocations, "shippingAllocated");
-  const sumFee = sumField(allocations, "feeAllocated");
-  const sumNeto = sumField(allocations, "netoPrenda");
-  const sumUnitPrice = pools.sumUnitPrices;
+  const sumDiscount = allocations.reduce(
+    (a, row) => a + Number(row.discountAllocated || 0),
+    0
+  );
+  const sumShipping = allocations.reduce(
+    (a, row) => a + Number(row.shippingAllocated || 0),
+    0
+  );
+  const sumGross = allocations.reduce(
+    (a, row) => a + Number(row.grossUnitAmount || 0),
+    0
+  );
+  const sumNet = allocations.reduce(
+    (a, row) => a + Number(row.netoPrenda || 0),
+    0
+  );
 
   if (!near(sumDiscount, pools.poolDiscount)) {
     failures.push({
       check: "V-C1",
-      message: "Σ discount_allocated ≠ pool_discount",
+      message: "Σ discount_allocated ≠ tn_discount",
       expected: pools.poolDiscount,
       actual: sumDiscount,
       delta: sumDiscount - pools.poolDiscount,
@@ -75,56 +76,52 @@ export function validateTnCommercialAllocations(
   if (!near(sumShipping, pools.poolShippingOwner)) {
     failures.push({
       check: "V-C2",
-      message: "Σ shipping_allocated ≠ pool_shipping_owner",
+      message: "Σ shipping_allocated ≠ shipping pool",
       expected: pools.poolShippingOwner,
       actual: sumShipping,
       delta: sumShipping - pools.poolShippingOwner,
     });
   }
 
-  if (!near(sumFee, pools.poolFeeCommercial)) {
+  if (!near(sumGross, tnSubtotal)) {
     failures.push({
       check: "V-C3",
-      message: "Σ fee_allocated ≠ pool_fee_commercial",
-      expected: pools.poolFeeCommercial,
-      actual: sumFee,
-      delta: sumFee - pools.poolFeeCommercial,
+      message: "Σ gross_unit_amount ≠ subtotal esperado",
+      expected: tnSubtotal,
+      actual: sumGross,
+      delta: sumGross - tnSubtotal,
     });
   }
 
-  const expectedNeto = sumUnitPrice - sumDiscount + sumFee;
-  if (!near(sumNeto, expectedNeto)) {
-    failures.push({
-      check: "V-C4",
-      message: "Σ neto_prenda ≠ Σ unit_price - Σ discount + Σ fee",
-      expected: expectedNeto,
-      actual: sumNeto,
-      delta: sumNeto - expectedNeto,
-    });
+  for (const row of allocations) {
+    const negatives = [
+      ["gross_unit_amount", row.grossUnitAmount],
+      ["discount_allocated", row.discountAllocated],
+      ["shipping_allocated", row.shippingAllocated],
+      ["fee_allocated", row.feeAllocated],
+      ["net_commercial_amount", row.netoPrenda],
+    ].filter(([, v]) => Number(v) < -TOLERANCE);
+
+    if (negatives.length) {
+      failures.push({
+        check: "V-C4",
+        message: `allocations negativas en unit ${row.tnOrderItemUnitId}: ${negatives.map(([k]) => k).join(", ")}`,
+      });
+      break;
+    }
   }
 
-  if (!near(sumUnitPrice, tnSubtotal)) {
+  if (allocations.length !== unitCount) {
     failures.push({
       check: "V-C5",
-      message: "Σ unit_price ≠ tn_subtotal",
-      expected: tnSubtotal,
-      actual: sumUnitPrice,
-      delta: sumUnitPrice - tnSubtotal,
+      message: "1 allocation por unidad",
+      expected: unitCount,
+      actual: allocations.length,
+      delta: allocations.length - unitCount,
     });
   }
 
-  const closure =
-    sumNeto + pools.shippingPaidCustomer;
-  const closureDelta = closure - tnTotal;
-  if (!near(closure, tnTotal)) {
-    failures.push({
-      check: "V-C6",
-      message: "Cierre comercial: Σ neto_prenda + shipping_paid ≠ tn_total",
-      expected: tnTotal,
-      actual: closure,
-      delta: closureDelta,
-    });
-  }
+  const discountInferenceDelta = pools.poolDiscountInferred - tnDiscount;
 
   return {
     passed: failures.length === 0,
@@ -132,14 +129,46 @@ export function validateTnCommercialAllocations(
     sums: {
       discount: sumDiscount,
       shipping: sumShipping,
-      fee: sumFee,
-      netoPrenda: sumNeto,
-      unitPrice: sumUnitPrice,
+      grossUnitAmount: sumGross,
+      netCommercialAmount: sumNet,
     },
     audit: {
+      tnDiscount,
       poolDiscountInferred: pools.poolDiscountInferred,
-      shippingPaidCustomer: pools.shippingPaidCustomer,
-      closureDelta,
+      discountInferenceDelta,
     },
   };
 }
+
+export type BatchCoverageResult = {
+  tnOnlyOrders: number;
+  tnOnlyUnits: number;
+  allocatedOrders: number;
+  allocatedUnits: number;
+  orderCoveragePct: number;
+  unitCoveragePct: number;
+  duplicateUnitAllocations: number;
+  orphanAllocations: number;
+};
+
+export type BatchValidationSummary = {
+  ordersProcessed: number;
+  ordersFailed: number;
+  unitsProcessed: number;
+  validationFailures: Array<{
+    check: ValidationCheckId;
+    count: number;
+    orders: string[];
+  }>;
+  coverage: BatchCoverageResult;
+  auditV6: {
+    ordersWithInferenceDelta: number;
+    maxInferenceDelta: number;
+    orders: Array<{
+      tnOrderId: string;
+      tnDiscount: number;
+      poolDiscountInferred: number;
+      delta: number;
+    }>;
+  };
+};

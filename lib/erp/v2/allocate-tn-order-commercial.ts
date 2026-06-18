@@ -23,6 +23,7 @@ export type CommercialUnitAllocation = {
   tnOrderId: string;
   tnOrderItemId: string;
   tnOrderItemUnitId: string;
+  grossUnitAmount: number;
   discountAllocated: number;
   shippingAllocated: number;
   feeAllocated: number;
@@ -82,6 +83,7 @@ export function allocateTnOrderCommercial(
       tnOrderId: u.tnOrderId,
       tnOrderItemId: u.tnOrderItemId,
       tnOrderItemUnitId: u.id,
+      grossUnitAmount: unitPrice,
       discountAllocated,
       shippingAllocated,
       feeAllocated,
