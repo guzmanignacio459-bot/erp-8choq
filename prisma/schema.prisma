@@ -119,6 +119,8 @@ model TnOrder {
   fulfillmentStatus   TnFulfillmentStatus? @map("fulfillment_status")
   allocatedAt         DateTime? @map("allocated_at")
   stockDeductedAt     DateTime? @map("stock_deducted_at")
+  /// Último updated_at visto en API TN (watermark M5.1)
+  tnUpdatedAt         DateTime? @map("tn_updated_at")
 
   syncedAt            DateTime  @default(now()) @map("synced_at")
   updatedAt           DateTime  @updatedAt @map("updated_at")
@@ -137,6 +139,7 @@ model TnOrder {
   @@index([commercialStatus])
   @@index([channel])
   @@index([mpPaymentId])
+  @@index([tnUpdatedAt])
   @@map("tn_orders")
 }
 
@@ -479,4 +482,17 @@ model Payment {
   @@index([erpOrderId])
   @@index([mpStatus])
   @@map("payments")
+}
+
+/// Cursor incremental M5.1 — watermark por scope (TN live import)
+model SyncState {
+  scope         String    @id
+  watermarkAt   DateTime  @map("watermark_at")
+  lastRunAt     DateTime? @map("last_run_at")
+  lastRunMode   String?   @map("last_run_mode")
+  lastRunStats  Json?     @map("last_run_stats")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  @@map("sync_state")
 }

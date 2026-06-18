@@ -30,6 +30,8 @@
     "m4:inventory:snapshot:bootstrap": "npx tsx scripts/m4-inventory-snapshot-bootstrap.ts",
     "m4:inventory:projection:verify": "npx tsx scripts/m4-inventory-projection-verify.ts",
     "m4:inventory:projection:sanity": "npx tsx scripts/m4-inventory-projection-sanity-audit.ts",
+    "m5:db:push": "node scripts/m5-db-push.mjs",
+    "m5:live:import": "npx tsx scripts/m5-live-import.ts",
     "m3:mp:backfill": "node scripts/m3-mp-backfill-tn-link.mjs",
     "m3:mp:sync:pilot": "node scripts/m3-mp-sync-pilot.mjs",
     "m3:mp:refresh": "node scripts/m3-mp-refresh.mjs",
