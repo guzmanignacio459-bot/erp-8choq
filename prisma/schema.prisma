@@ -377,6 +377,45 @@ model StockMovement {
   @@map("stock_movements")
 }
 
+/// Cabecera bootstrap inventario — punto cero ERP V2 (M4.8)
+model InventorySnapshotRun {
+  id             String   @id @default(cuid())
+  snapshotDate   DateTime @map("snapshot_date")
+  label          String
+  source         String   @default("stock_maestro_bootstrap")
+  rowCount       Int      @default(0) @map("row_count")
+  isActive       Boolean  @default(false) @map("is_active")
+  importedAt     DateTime @default(now()) @map("imported_at")
+  importedBy     String?  @map("imported_by")
+  checksumSha256 String?  @map("checksum_sha256")
+  notes          String?
+
+  lines InventorySnapshotLine[]
+
+  @@unique([snapshotDate, source])
+  @@map("inventory_snapshot_runs")
+}
+
+/// Línea snapshot — grain SKU + talle + owner (M4.8)
+model InventorySnapshotLine {
+  id           String   @id @default(cuid())
+  runId        String   @map("run_id")
+  snapshotDate DateTime @map("snapshot_date")
+  sku          String
+  talle        String
+  owner        String   @default("8Q")
+  quantity     Int
+  source       String   @default("stock_maestro_bootstrap")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  run InventorySnapshotRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  @@unique([runId, sku, talle, owner])
+  @@index([sku, talle])
+  @@index([snapshotDate])
+  @@map("inventory_snapshot_lines")
+}
+
 // ─── Trazas e integraciones ──────────────────────────────────────────────────
 
 model ImportLog {
