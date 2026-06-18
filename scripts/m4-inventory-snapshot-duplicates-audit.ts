@@ -32,8 +32,12 @@ async function main() {
   const headerAudit = auditStockMaestroHeaders(sheet.headers);
   const audit = auditStockMaestroDuplicates(sheet.sourceRows);
 
-  const draft = unpivotStockMaestro(sheet.sourceRows, { includeZeroQty: true });
-  const validation = validateSnapshotDraft(draft, sheet.sourceRows);
+  const normalizedDraft = unpivotStockMaestro(sheet.sourceRows, {
+    includeZeroQty: true,
+    normalizeEmbeddedTalle: true,
+    dedupeKeys: true,
+  });
+  const validation = validateSnapshotDraft(normalizedDraft);
 
   const report = {
     generatedAt,

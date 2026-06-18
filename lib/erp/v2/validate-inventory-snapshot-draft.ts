@@ -3,7 +3,6 @@ import {
   VALID_SNAPSHOT_OWNERS,
   VALID_STOCK_SIZE_SET,
 } from "@/lib/erp/v2/stock-maestro-constants";
-import type { StockMaestroRow } from "@/lib/erp/v2/read-stock-maestro";
 
 export type SnapshotDuplicateKey = {
   sku: string;
@@ -27,10 +26,10 @@ export type InvalidTalleIssue = {
   sourceRowIndex: number;
 };
 
-export type SourceSkuDuplicate = {
-  sku: string;
-  count: number;
-  sourceRowIndexes: number[];
+export type ManualReviewWarning = {
+  rowIndex: number;
+  articulo: string;
+  reason: "manual_review_required";
 };
 
 export type SnapshotDraftValidation = {
@@ -50,7 +49,7 @@ export type SnapshotDraftValidation = {
     invalidTalles: InvalidTalleIssue[];
     invalidOwners: Array<{ sku: string; owner: string; talle: string }>;
   };
-  sourceSkuDuplicates: SourceSkuDuplicate[];
+  manualReviewWarnings: ManualReviewWarning[];
   allPass: boolean;
 };
 
@@ -60,10 +59,7 @@ function lineKey(line: Pick<SnapshotDraftLine, "sku" | "talle" | "owner">): stri
   return `${line.sku}\0${line.talle}\0${line.owner}`;
 }
 
-export function validateSnapshotDraft(
-  draft: SnapshotDraft,
-  sourceRows?: StockMaestroRow[]
-): SnapshotDraftValidation {
+export function validateSnapshotDraft(draft: SnapshotDraft): SnapshotDraftValidation {
   const dupMap = new Map<string, SnapshotDuplicateKey>();
 
   for (const line of draft.lines) {
@@ -125,43 +121,18 @@ export function validateSnapshotDraft(
     }
   }
 
-  if (sourceRows) {
-    for (const row of sourceRows) {
-      if (!row.sku) {
-        invalidSkus.push({
-          sku: "",
-          reason: "empty_sku_source_row",
-          sourceRowIndex: row.rowIndex,
-          articulo: row.articulo,
-        });
-      }
-    }
-  }
-
-  const sourceSkuDupMap = new Map<string, SourceSkuDuplicate>();
-  if (sourceRows) {
-    for (const row of sourceRows) {
-      if (!row.sku) continue;
-      const existing = sourceSkuDupMap.get(row.sku);
-      if (!existing) {
-        sourceSkuDupMap.set(row.sku, {
-          sku: row.sku,
-          count: 1,
-          sourceRowIndexes: [row.rowIndex],
-        });
-      } else {
-        existing.count += 1;
-        existing.sourceRowIndexes.push(row.rowIndex);
-      }
-    }
-  }
-
-  const sourceSkuDuplicates = [...sourceSkuDupMap.values()].filter((d) => d.count > 1);
+  const manualReviewWarnings: ManualReviewWarning[] = draft.warnings
+    .filter((w) => w.reason === "manual_review_required")
+    .map((w) => ({
+      rowIndex: w.rowIndex,
+      articulo: w.articulo,
+      reason: "manual_review_required" as const,
+    }));
 
   const vI1 = {
     id: "V-I1" as const,
-    pass: duplicates.length === 0 && sourceSkuDuplicates.length === 0,
-    duplicateCount: duplicates.length + sourceSkuDuplicates.length,
+    pass: duplicates.length === 0,
+    duplicateCount: duplicates.length,
     duplicates,
   };
 
@@ -182,7 +153,7 @@ export function validateSnapshotDraft(
   return {
     vI1,
     vI2,
-    sourceSkuDuplicates: sourceSkuDuplicates.slice(0, 50),
+    manualReviewWarnings,
     allPass: vI1.pass && vI2.pass,
   };
 }

@@ -245,7 +245,11 @@ function countCollisionsForSku(
   allRows: StockMaestroRow[]
 ): number {
   const subset = allRows.filter((r) => r.sku === sku);
-  const draft = unpivotStockMaestro(subset, { includeZeroQty: true });
+  const draft = unpivotStockMaestro(subset, {
+    includeZeroQty: true,
+    normalizeEmbeddedTalle: false,
+    dedupeKeys: false,
+  });
   const keys = new Map<string, number>();
   for (const line of draft.lines) {
     const key = `${line.sku}\0${line.talle}\0${line.owner}`;
@@ -337,7 +341,11 @@ export function auditStockMaestroDuplicates(
       };
     });
 
-  const draft = unpivotStockMaestro(sourceRows, { includeZeroQty: true });
+  const draft = unpivotStockMaestro(sourceRows, {
+    includeZeroQty: true,
+    normalizeEmbeddedTalle: false,
+    dedupeKeys: false,
+  });
   const collisionKeys = new Map<string, number>();
   for (const line of draft.lines) {
     const key = `${line.sku}\0${line.talle}\0${line.owner}`;

@@ -1,5 +1,5 @@
 /**
- * M4.8b — Bootstrap dry-run STOCK MAESTRO → snapshot draft (sin writes Neon)
+ * M4.8b / M4.8b.2 — Bootstrap dry-run STOCK MAESTRO → snapshot draft (sin writes Neon)
  */
 import fs from "fs";
 import path from "path";
@@ -22,9 +22,10 @@ loadEnvLocal();
 async function main() {
   const fetchedAt = new Date().toISOString();
   const proposedSnapshotDate = process.env.M4_8_SNAPSHOT_T0 ?? fetchedAt;
+  const milestone = "M4.8b.2";
 
-  console.log("[M4.8b] read-only STOCK MAESTRO bootstrap dry-run");
-  console.log("[M4.8b] proposed T0:", proposedSnapshotDate);
+  console.log(`[${milestone}] read-only STOCK MAESTRO bootstrap dry-run`);
+  console.log(`[${milestone}] proposed T0 (draft only):`, proposedSnapshotDate);
 
   const sheet = await readStockMaestroFromSheets();
   const headerAudit = auditStockMaestroHeaders(sheet.headers);
@@ -33,14 +34,21 @@ async function main() {
     includeZeroQty: true,
     proposedSnapshotDate,
     label: `bootstrap-draft-${proposedSnapshotDate.slice(0, 10)}`,
+    normalizeEmbeddedTalle: true,
+    dedupeKeys: true,
   });
 
-  const validation = validateSnapshotDraft(draft, sheet.sourceRows);
+  const validation = validateSnapshotDraft(draft);
 
   const report = {
     generatedAt: fetchedAt,
-    milestone: "M4.8b",
+    milestone,
     mode: "dry-run",
+    normalization: {
+      embeddedTalle: true,
+      dedupeKeys: true,
+      dedupePolicy: "last_source_row_wins",
+    },
     writes: false,
     neon: false,
     stockMovementsTouched: false,
@@ -57,15 +65,15 @@ async function main() {
       checksumSha256: draft.checksumSha256,
       stats: draft.stats,
     },
+    exclusions: draft.exclusions,
+    warnings: draft.warnings,
     validation: {
       allPass: validation.allPass,
-      vI1: {
-        ...validation.vI1,
-        sourceSkuDuplicateSkuCount: validation.sourceSkuDuplicates.length,
-      },
+      vI1: validation.vI1,
       vI2: validation.vI2,
-      sourceSkuDuplicates: validation.sourceSkuDuplicates,
+      manualReviewWarnings: validation.manualReviewWarnings,
     },
+    remainingDuplicates: validation.vI1.duplicates,
     risks: buildRisks(draft, validation, headerAudit),
     sampleLines: draft.lines.filter((l) => l.quantity > 0).slice(0, 10),
   };
@@ -73,14 +81,19 @@ async function main() {
   if (!fs.existsSync(WIP)) fs.mkdirSync(WIP, { recursive: true });
   fs.writeFileSync(REPORT_PATH, JSON.stringify(report, null, 2));
 
-  console.log("[M4.8b] source rows:", sheet.sourceRows.length);
-  console.log("[M4.8b] destination lines:", draft.stats.destinationLines);
-  console.log("[M4.8b] lines positive qty:", draft.stats.linesWithPositiveQty);
-  console.log("[M4.8b] unique SKUs:", draft.stats.uniqueSkus);
-  console.log("[M4.8b] checksum:", draft.checksumSha256);
-  console.log("[M4.8b] V-I1:", validation.vI1.pass ? "PASS" : "FAIL", validation.vI1);
-  console.log("[M4.8b] V-I2:", validation.vI2.pass ? "PASS" : "FAIL");
-  console.log("[M4.8b] report:", REPORT_PATH);
+  console.log(`[${milestone}] source rows:`, draft.stats.sourceRows);
+  console.log(`[${milestone}] eligible rows:`, draft.stats.eligibleSourceRows);
+  console.log(`[${milestone}] excluded rows:`, draft.stats.excludedRows);
+  console.log(`[${milestone}] embedded talle rows:`, draft.stats.embeddedTalleRows);
+  console.log(`[${milestone}] raw lines pre-dedupe:`, draft.stats.rawLinesBeforeDedupe);
+  console.log(`[${milestone}] deduped merged:`, draft.stats.dedupedLinesMerged);
+  console.log(`[${milestone}] destination lines:`, draft.stats.destinationLines);
+  console.log(`[${milestone}] unique snapshot keys:`, draft.stats.uniqueSnapshotKeys);
+  console.log(`[${milestone}] checksum:`, draft.checksumSha256);
+  console.log(`[${milestone}] V-I1:`, validation.vI1.pass ? "PASS" : "FAIL");
+  console.log(`[${milestone}] V-I2:`, validation.vI2.pass ? "PASS" : "FAIL");
+  console.log(`[${milestone}] manual review warnings:`, validation.manualReviewWarnings.length);
+  console.log(`[${milestone}] report:`, REPORT_PATH);
 
   if (!validation.allPass) {
     process.exitCode = 1;
@@ -97,34 +110,38 @@ function buildRisks(
   if (headerAudit.missingSizes.length) {
     risks.push(`Columnas talle ausentes: ${headerAudit.missingSizes.join(", ")}`);
   }
-  if (validation.sourceSkuDuplicates.length) {
+  if (!validation.vI1.pass) {
     risks.push(
-      `${validation.sourceSkuDuplicates.length} SKU duplicados en STOCK MAESTRO (pre-unpivot)`
+      `V-I1 FAIL — ${validation.vI1.duplicateCount} keys duplicadas remanentes post-normalización`
     );
   }
-  if (!validation.vI1.pass) {
-    risks.push("V-I1 FAIL — duplicados en grain destino o fuente");
-  }
   if (!validation.vI2.pass) {
-    risks.push("V-I2 FAIL — SKU/talle/owner inválidos");
+    risks.push("V-I2 FAIL — SKU/talle/owner inválidos en líneas destino");
   }
-  if (draft.stats.sourceRowsEmptySku > 0) {
-    risks.push(`${draft.stats.sourceRowsEmptySku} filas origen sin SKU`);
+  if (draft.stats.dedupedLinesMerged > 0) {
+    risks.push(
+      `${draft.stats.dedupedLinesMerged} líneas fusionadas por dedupe last_row_wins — verificar cantidades`
+    );
   }
-  if (draft.stats.linesWithInvalidQty > 0) {
-    risks.push(`${draft.stats.linesWithInvalidQty} celdas talle con cantidad no numérica`);
+  if (validation.manualReviewWarnings.length) {
+    risks.push(
+      `${validation.manualReviewWarnings.length} fila(s) manual_review_required excluidas con warning audit-only`
+    );
   }
+  if (draft.stats.excludedSyncArtifactRows > 0) {
+    risks.push(
+      `${draft.stats.excludedSyncArtifactRows} filas sync artifact excluidas del bootstrap`
+    );
+  }
+  risks.push("T0 no declarado — pendiente M4.8c tras PASS estable");
   risks.push(
-    "T0 propuesto es draft — declaración formal pendiente M4.8c; M4.5c no debe correr antes"
-  );
-  risks.push(
-    "101 stock_movements piloto existentes — coordinar ventana T0 vs created_at al import real"
+    "101 stock_movements piloto — coordinar created_at >= T0 al import real"
   );
 
   return risks;
 }
 
 main().catch((err) => {
-  console.error("[M4.8b] fatal:", err);
+  console.error("[M4.8b.2] fatal:", err);
   process.exit(1);
 });
