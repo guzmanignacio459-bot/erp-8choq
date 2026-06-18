@@ -114,6 +114,7 @@ export async function listMpEligibleOrderIds(): Promise<string[]> {
     JOIN tn_order_item_units u ON u.tn_order_id = p.tn_order_id
     WHERE p.tn_order_id IS NOT NULL
       AND p.mp_neto_real_orden IS NOT NULL
+      AND p.source = 'mp_api_sync_staging'
     ORDER BY p.tn_order_id ASC
   `;
   return rows.map((r) => String(r.id));
@@ -125,7 +126,10 @@ async function loadOrderWithUnitsAndPayment(tnOrderId: string) {
     where: { id: tnOrderId },
     include: {
       payments: {
-        where: { mpNetoRealOrden: { not: null } },
+        where: {
+          mpNetoRealOrden: { not: null },
+          source: "mp_api_sync_staging",
+        },
         orderBy: { updatedAt: "desc" },
         take: 1,
       },
@@ -390,6 +394,33 @@ export function summarizeMpValidationFailures(
     .sort((a, b) => a.check.localeCompare(b.check));
 }
 
+export async function allocateTnOrdersMpBackfill(
+  tnOrderIds: string[],
+  opts?: { dryRun?: boolean; ensureCommercial?: boolean }
+): Promise<MpAllocateItemResult[]> {
+  return allocateTnOrdersMpBatch(tnOrderIds, opts);
+}
+
+export type MpBatchValidationSummary = {
+  ordersProcessed: number;
+  ordersFailed: number;
+  unitsProcessed: number;
+  validationFailures: MpValidationFailureSummary[];
+};
+
+export function summarizeMpBatchResults(
+  results: MpAllocateItemResult[]
+): MpBatchValidationSummary {
+  return {
+    ordersProcessed: results.length,
+    ordersFailed: results.filter((r) => !r.ok).length,
+    unitsProcessed: results
+      .filter((r) => r.ok)
+      .reduce((a, r) => a + (r.ok ? r.unitCount : 0), 0),
+    validationFailures: summarizeMpValidationFailures(results),
+  };
+}
+
 export async function measureMpCoverage(): Promise<{
   eligibleOrders: number;
   mpAllocatedOrders: number;
@@ -408,8 +439,8 @@ export async function measureMpCoverage(): Promise<{
         COUNT(u.id)::int AS units
       FROM payments p
       JOIN tn_order_item_units u ON u.tn_order_id = p.tn_order_id
-      JOIN tn_order_item_allocations a ON a.tn_order_item_unit_id = u.id
       WHERE p.mp_neto_real_orden IS NOT NULL
+        AND p.source = 'mp_api_sync_staging'
     `,
     prisma.$queryRaw<
       Array<{ orders: number; units: number }>
@@ -421,6 +452,7 @@ export async function measureMpCoverage(): Promise<{
       JOIN payments p ON p.tn_order_id = a.tn_order_id
       WHERE a.neto_prenda_real IS NOT NULL
         AND p.mp_neto_real_orden IS NOT NULL
+        AND p.source = 'mp_api_sync_staging'
     `,
   ]);
 
