@@ -100,6 +100,11 @@ export type TnOrderItemAllocationSnapshot = {
   feeAllocated?: number;
   netoPrenda?: number;
   netoPrendaReal?: number | null;
+  mpTaxAllocatedReal?: number | null;
+  mpFinancingAllocatedReal?: number | null;
+  mpFeeAllocatedReal?: number | null;
+  mpPlatformFeeAllocatedReal?: number | null;
+  mpTotalCostAllocatedReal?: number | null;
   owner?: string | null;
   netoPrendaScnl?: number | null;
   netoPrenda8q?: number | null;

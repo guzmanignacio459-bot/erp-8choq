@@ -228,6 +228,70 @@ export type V2CommercialAllocateResponse = {
   error?: string;
 };
 
+export type V2MpValidationFailure = {
+  check: "V-M1" | "V-M2" | "V-M3" | "V-M4";
+  message: string;
+  expected?: number;
+  actual?: number;
+  delta?: number;
+};
+
+export type V2MpValidation = {
+  passed: boolean;
+  failures: V2MpValidationFailure[];
+  sums: {
+    mpFeeAllocated: number;
+    mpTaxAllocated: number;
+    mpFinancingAllocated: number;
+    mpPlatformFeeAllocated: number;
+    mpTotalCostAllocated: number;
+    netoPrendaReal: number;
+  };
+};
+
+export type V2MpAllocateItemResult =
+  | {
+      ok: true;
+      tnOrderId: string;
+      unitCount: number;
+      mpPaymentId: string | null;
+      validation: V2MpValidation;
+    }
+  | {
+      ok: false;
+      tnOrderId: string;
+      error: string;
+      code: string;
+      validation?: V2MpValidation;
+    };
+
+export type V2MpAllocateRequest = {
+  tnOrderId?: string;
+  tnOrderIds?: string[];
+  dryRun?: boolean;
+  ensureCommercial?: boolean;
+};
+
+export type V2MpAllocateResponse = {
+  ok: boolean;
+  results: V2MpAllocateItemResult[];
+  count: number;
+  allocated: number;
+  failed: number;
+  units: number;
+  validationFailures: Array<{
+    check: V2MpValidationFailure["check"];
+    count: number;
+    orders: string[];
+  }>;
+  fetchedAt: string;
+  source: "neon-staging";
+  urlMeta?: V2DbUrlMeta;
+  dryRun?: boolean;
+  ensureCommercial?: boolean;
+  error?: string;
+};
+
 export type L2CompareRemitosReport = {
   generatedAt: string;
   scope: { from: string; to: string };

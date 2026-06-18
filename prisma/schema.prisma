@@ -198,6 +198,8 @@ model TnOrderItemAllocation {
   /// net_commercial_amount (neto prenda comercial TN)
   netoPrenda                Decimal  @default(0) @map("neto_prenda") @db.Decimal(14, 2)
   netoPrendaReal            Decimal?  @map("neto_prenda_real") @db.Decimal(14, 2)
+  mpTaxAllocatedReal        Decimal?  @map("mp_tax_allocated_real") @db.Decimal(14, 2)
+  mpFinancingAllocatedReal  Decimal?  @map("mp_financing_allocated_real") @db.Decimal(14, 2)
   mpFeeAllocatedReal        Decimal?  @map("mp_fee_allocated_real") @db.Decimal(14, 2)
   mpPlatformFeeAllocatedReal Decimal? @map("mp_platform_fee_allocated_real") @db.Decimal(14, 2)
   mpTotalCostAllocatedReal  Decimal?  @map("mp_total_cost_allocated_real") @db.Decimal(14, 2)
