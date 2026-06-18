@@ -63,6 +63,20 @@ enum ErpOrderSource {
   internal
 }
 
+/// Tipo de movimiento stock ledger M4.5
+enum StockMovementType {
+  sale
+  return
+  manual_adjustment
+}
+
+/// Dirección ledger M4.5
+enum StockMovementDirection {
+  out
+  in
+  adjust
+}
+
 // ─── A) Fuente Tiendanube (universo ventas / facturación KPI) ───────────────
 
 /// Orden ecommerce TN — entidad principal ventas/facturación (M1 TN-first)
@@ -327,21 +341,25 @@ model ErpOrderItem {
   @@map("erp_order_items")
 }
 
-/// Movimiento de stock — polimórfico TN (ecommerce) o ERP (manual) — stub M1
+/// Movimiento de stock — ledger append-only TN-first (M4.5)
 model StockMovement {
-  id                String   @id @default(cuid())
-  tnOrderId         String?  @map("tn_order_id")
-  tnOrderItemId     String?  @map("tn_order_item_id")
-  tnOrderItemUnitId String?  @map("tn_order_item_unit_id")
-  erpOrderId        String?  @map("erp_order_id")
-  erpOrderItemId    String?  @map("erp_order_item_id")
+  id                String                 @id @default(cuid())
+  tnOrderId         String?                @map("tn_order_id")
+  tnOrderItemId     String?                @map("tn_order_item_id")
+  tnOrderItemUnitId String?                @map("tn_order_item_unit_id")
+  erpOrderId        String?                @map("erp_order_id")
+  erpOrderItemId    String?                @map("erp_order_item_id")
   sku               String
   talle             String?
+  owner             String?
   quantity          Int
-  direction         String // out | in | adjust
+  movementType      StockMovementType      @map("movement_type")
+  direction         StockMovementDirection
   reason            String?
-  source            String   @default("pending_engine")
-  createdAt         DateTime @default(now()) @map("created_at")
+  idempotencyKey    String                 @unique @map("idempotency_key")
+  correlationId     String?                @map("correlation_id")
+  source            String                 @default("m4_stock_ledger")
+  createdAt         DateTime               @default(now()) @map("created_at")
 
   tnOrder         TnOrder?         @relation(fields: [tnOrderId], references: [id], onDelete: Cascade)
   tnOrderItem     TnOrderItem?     @relation(fields: [tnOrderItemId], references: [id], onDelete: SetNull)
@@ -349,10 +367,13 @@ model StockMovement {
   erpOrder        ErpOrder?        @relation(fields: [erpOrderId], references: [id], onDelete: Cascade)
   erpOrderItem    ErpOrderItem?    @relation(fields: [erpOrderItemId], references: [id], onDelete: SetNull)
 
+  @@unique([tnOrderItemUnitId, movementType])
   @@index([tnOrderId])
   @@index([tnOrderItemUnitId])
   @@index([erpOrderId])
   @@index([sku])
+  @@index([movementType])
+  @@index([correlationId])
   @@map("stock_movements")
 }
 
