@@ -151,9 +151,179 @@ export async function listTnOnlyStockPilotOrderIds(
   return rows.map((r) => String(r.id));
 }
 
+export async function listTnOnlyOrderIds(): Promise<string[]> {
+  const prisma = getPrisma();
+  const rows = await prisma.$queryRaw<Array<{ id: string }>>`
+    SELECT o.id
+    FROM tn_orders o
+    LEFT JOIN erp_orders e ON e.tn_order_id = o.id
+    WHERE e.id IS NULL
+    ORDER BY o.id ASC
+  `;
+  return rows.map((r) => String(r.id));
+}
+
+export async function listTnOnlyStockBackfillOrderIds(): Promise<string[]> {
+  const prisma = getPrisma();
+  const rows = await prisma.$queryRaw<Array<{ id: string }>>`
+    SELECT o.id
+    FROM tn_orders o
+    LEFT JOIN erp_orders e ON e.tn_order_id = o.id
+    WHERE e.id IS NULL
+      AND EXISTS (
+        SELECT 1
+        FROM tn_order_item_units u
+        WHERE u.tn_order_id = o.id
+          AND u.is_stockable = true
+          AND u.is_gifty = false
+          AND COALESCE(TRIM(u.sku), '') <> ''
+          AND COALESCE(TRIM(u.talle), '') <> ''
+      )
+      AND NOT EXISTS (
+        SELECT 1 FROM stock_movements m
+        WHERE m.tn_order_id = o.id
+          AND m.movement_type = 'sale'
+          AND m.source = ${STOCK_LEDGER_SOURCE}
+      )
+    ORDER BY o.id ASC
+  `;
+  return rows.map((r) => String(r.id));
+}
+
+export type StockBackfillPreAudit = {
+  snapshotDate: string;
+  tnOnlyOrders: number;
+  stockableUnits: number;
+  ordersWithSaleMovement: number;
+  saleMovementsTotal: number;
+  saleMovementsBeforeT0: number;
+  saleMovementsAtOrAfterT0: number;
+  ordersPendingBackfill: number;
+  unitsPendingBackfill: number;
+};
+
+export async function auditTnOnlyStockBackfill(
+  snapshotDate: Date
+): Promise<StockBackfillPreAudit> {
+  const prisma = getPrisma();
+
+  const [
+    orderCount,
+    unitCount,
+    movementStats,
+    pendingOrders,
+    pendingUnits,
+  ] = await Promise.all([
+    prisma.$queryRaw<Array<{ count: number }>>`
+      SELECT COUNT(*)::int AS count
+      FROM tn_orders o
+      LEFT JOIN erp_orders e ON e.tn_order_id = o.id
+      WHERE e.id IS NULL
+    `,
+    prisma.$queryRaw<Array<{ count: number }>>`
+      SELECT COUNT(*)::int AS count
+      FROM tn_order_item_units u
+      JOIN tn_orders o ON o.id = u.tn_order_id
+      LEFT JOIN erp_orders e ON e.tn_order_id = o.id
+      WHERE e.id IS NULL
+        AND u.is_stockable = true
+        AND u.is_gifty = false
+        AND COALESCE(TRIM(u.sku), '') <> ''
+        AND COALESCE(TRIM(u.talle), '') <> ''
+    `,
+    prisma.$queryRaw<
+      Array<{
+        orders_with_sale: number;
+        sales_total: number;
+        sales_before_t0: number;
+        sales_at_or_after_t0: number;
+      }>
+    >`
+      SELECT
+        COUNT(DISTINCT m.tn_order_id)::int AS orders_with_sale,
+        COUNT(m.id)::int AS sales_total,
+        COUNT(m.id) FILTER (WHERE m.created_at < ${snapshotDate})::int AS sales_before_t0,
+        COUNT(m.id) FILTER (WHERE m.created_at >= ${snapshotDate})::int AS sales_at_or_after_t0
+      FROM stock_movements m
+      JOIN tn_orders o ON o.id = m.tn_order_id
+      LEFT JOIN erp_orders e ON e.tn_order_id = o.id
+      WHERE e.id IS NULL
+        AND m.movement_type = 'sale'
+        AND m.source = ${STOCK_LEDGER_SOURCE}
+    `,
+    prisma.$queryRaw<Array<{ count: number }>>`
+      SELECT COUNT(*)::int AS count
+      FROM tn_orders o
+      LEFT JOIN erp_orders e ON e.tn_order_id = o.id
+      WHERE e.id IS NULL
+        AND EXISTS (
+          SELECT 1
+          FROM tn_order_item_units u
+          WHERE u.tn_order_id = o.id
+            AND u.is_stockable = true
+            AND u.is_gifty = false
+            AND COALESCE(TRIM(u.sku), '') <> ''
+            AND COALESCE(TRIM(u.talle), '') <> ''
+        )
+        AND NOT EXISTS (
+          SELECT 1 FROM stock_movements m
+          WHERE m.tn_order_id = o.id
+            AND m.movement_type = 'sale'
+            AND m.source = ${STOCK_LEDGER_SOURCE}
+        )
+    `,
+    prisma.$queryRaw<Array<{ count: number }>>`
+      SELECT COUNT(*)::int AS count
+      FROM tn_order_item_units u
+      JOIN tn_orders o ON o.id = u.tn_order_id
+      LEFT JOIN erp_orders e ON e.tn_order_id = o.id
+      WHERE e.id IS NULL
+        AND u.is_stockable = true
+        AND u.is_gifty = false
+        AND COALESCE(TRIM(u.sku), '') <> ''
+        AND COALESCE(TRIM(u.talle), '') <> ''
+        AND NOT EXISTS (
+          SELECT 1 FROM stock_movements m
+          WHERE m.tn_order_item_unit_id = u.id
+            AND m.movement_type = 'sale'
+            AND m.source = ${STOCK_LEDGER_SOURCE}
+        )
+    `,
+  ]);
+
+  return {
+    snapshotDate: snapshotDate.toISOString(),
+    tnOnlyOrders: orderCount[0]?.count ?? 0,
+    stockableUnits: unitCount[0]?.count ?? 0,
+    ordersWithSaleMovement: movementStats[0]?.orders_with_sale ?? 0,
+    saleMovementsTotal: movementStats[0]?.sales_total ?? 0,
+    saleMovementsBeforeT0: movementStats[0]?.sales_before_t0 ?? 0,
+    saleMovementsAtOrAfterT0: movementStats[0]?.sales_at_or_after_t0 ?? 0,
+    ordersPendingBackfill: pendingOrders[0]?.count ?? 0,
+    unitsPendingBackfill: pendingUnits[0]?.count ?? 0,
+  };
+}
+
+export async function bumpPreT0SaleMovements(snapshotDate: Date): Promise<number> {
+  const prisma = getPrisma();
+  const result = await prisma.stockMovement.updateMany({
+    where: {
+      source: STOCK_LEDGER_SOURCE,
+      movementType: StockMovementType.sale,
+      createdAt: { lt: snapshotDate },
+    },
+    data: { createdAt: snapshotDate },
+  });
+  return result.count;
+}
+
 export async function recordTnOrderStockSales(
   tnOrderId: string,
-  opts?: { dryRun?: boolean; correlationId?: string }
+  opts?: {
+    dryRun?: boolean;
+    correlationId?: string;
+    movementCreatedAt?: Date;
+  }
 ): Promise<StockLedgerItemResult> {
   const prisma = getPrisma();
   const order = await prisma.tnOrder.findUnique({
@@ -213,6 +383,9 @@ export async function recordTnOrderStockSales(
             idempotencyKey: d.idempotencyKey,
             correlationId: opts?.correlationId ?? null,
             source: STOCK_LEDGER_SOURCE,
+            ...(opts?.movementCreatedAt
+              ? { createdAt: opts.movementCreatedAt }
+              : {}),
           },
           update: {
             correlationId: opts?.correlationId ?? null,
@@ -240,7 +413,11 @@ export async function recordTnOrderStockSales(
 
 export async function recordTnOrdersStockSalesBatch(
   tnOrderIds: string[],
-  opts?: { dryRun?: boolean; correlationId?: string }
+  opts?: {
+    dryRun?: boolean;
+    correlationId?: string;
+    movementCreatedAt?: Date;
+  }
 ): Promise<StockLedgerItemResult[]> {
   const results: StockLedgerItemResult[] = [];
   for (const id of tnOrderIds) {
@@ -331,4 +508,139 @@ export async function measureStockPilotCoverage(
       ? Math.round((actual / expected) * 10000) / 100
       : 0,
   };
+}
+
+export type TnOnlyStockCoverage = {
+  tnOnlyOrders: number;
+  expectedStockableUnits: number;
+  saleMovementsTotal: number;
+  saleMovementsPostT0: number;
+  saleMovementsBeforeT0: number;
+  ordersWithSales: number;
+  unitCoveragePct: number;
+  duplicateUnitSales: number;
+  nonUnitQuantitySales: number;
+  giftySales: number;
+};
+
+export async function measureTnOnlyStockCoverage(
+  snapshotDate: Date
+): Promise<TnOnlyStockCoverage> {
+  const prisma = getPrisma();
+
+  const [
+    orderCount,
+    expectedRows,
+    movementRows,
+    dupRows,
+    qtyRows,
+    giftyRows,
+  ] = await Promise.all([
+    prisma.$queryRaw<Array<{ count: number }>>`
+      SELECT COUNT(*)::int AS count
+      FROM tn_orders o
+      LEFT JOIN erp_orders e ON e.tn_order_id = o.id
+      WHERE e.id IS NULL
+    `,
+    prisma.$queryRaw<Array<{ count: number }>>`
+      SELECT COUNT(*)::int AS count
+      FROM tn_order_item_units u
+      JOIN tn_orders o ON o.id = u.tn_order_id
+      LEFT JOIN erp_orders e ON e.tn_order_id = o.id
+      WHERE e.id IS NULL
+        AND u.is_stockable = true
+        AND u.is_gifty = false
+        AND COALESCE(TRIM(u.sku), '') <> ''
+        AND COALESCE(TRIM(u.talle), '') <> ''
+    `,
+    prisma.$queryRaw<
+      Array<{
+        total: number;
+        post_t0: number;
+        before_t0: number;
+        orders: number;
+      }>
+    >`
+      SELECT
+        COUNT(m.id)::int AS total,
+        COUNT(m.id) FILTER (WHERE m.created_at >= ${snapshotDate})::int AS post_t0,
+        COUNT(m.id) FILTER (WHERE m.created_at < ${snapshotDate})::int AS before_t0,
+        COUNT(DISTINCT m.tn_order_id)::int AS orders
+      FROM stock_movements m
+      JOIN tn_orders o ON o.id = m.tn_order_id
+      LEFT JOIN erp_orders e ON e.tn_order_id = o.id
+      WHERE e.id IS NULL
+        AND m.movement_type = 'sale'
+        AND m.source = ${STOCK_LEDGER_SOURCE}
+    `,
+    prisma.$queryRaw<Array<{ count: number }>>`
+      SELECT COUNT(*)::int AS count
+      FROM (
+        SELECT m.tn_order_item_unit_id
+        FROM stock_movements m
+        JOIN tn_orders o ON o.id = m.tn_order_id
+        LEFT JOIN erp_orders e ON e.tn_order_id = o.id
+        WHERE e.id IS NULL
+          AND m.movement_type = 'sale'
+          AND m.source = ${STOCK_LEDGER_SOURCE}
+          AND m.tn_order_item_unit_id IS NOT NULL
+        GROUP BY m.tn_order_item_unit_id
+        HAVING COUNT(*) > 1
+      ) d
+    `,
+    prisma.$queryRaw<Array<{ count: number }>>`
+      SELECT COUNT(*)::int AS count
+      FROM stock_movements m
+      JOIN tn_orders o ON o.id = m.tn_order_id
+      LEFT JOIN erp_orders e ON e.tn_order_id = o.id
+      WHERE e.id IS NULL
+        AND m.movement_type = 'sale'
+        AND m.source = ${STOCK_LEDGER_SOURCE}
+        AND m.quantity <> 1
+    `,
+    prisma.$queryRaw<Array<{ count: number }>>`
+      SELECT COUNT(*)::int AS count
+      FROM stock_movements m
+      JOIN tn_orders o ON o.id = m.tn_order_id
+      LEFT JOIN erp_orders e ON e.tn_order_id = o.id
+      WHERE e.id IS NULL
+        AND m.movement_type = 'sale'
+        AND m.source = ${STOCK_LEDGER_SOURCE}
+        AND (
+          UPPER(TRIM(m.sku)) = 'GIFTY'
+          OR UPPER(TRIM(m.sku)) LIKE 'GIFTY-%'
+        )
+    `,
+  ]);
+
+  const expected = expectedRows[0]?.count ?? 0;
+  const total = movementRows[0]?.total ?? 0;
+
+  return {
+    tnOnlyOrders: orderCount[0]?.count ?? 0,
+    expectedStockableUnits: expected,
+    saleMovementsTotal: total,
+    saleMovementsPostT0: movementRows[0]?.post_t0 ?? 0,
+    saleMovementsBeforeT0: movementRows[0]?.before_t0 ?? 0,
+    ordersWithSales: movementRows[0]?.orders ?? 0,
+    unitCoveragePct: expected
+      ? Math.round((total / expected) * 10000) / 100
+      : 0,
+    duplicateUnitSales: dupRows[0]?.count ?? 0,
+    nonUnitQuantitySales: qtyRows[0]?.count ?? 0,
+    giftySales: giftyRows[0]?.count ?? 0,
+  };
+}
+
+export async function loadActiveSnapshotDate(): Promise<Date> {
+  const prisma = getPrisma();
+  const run = await prisma.inventorySnapshotRun.findFirst({
+    where: { isActive: true, source: "stock_maestro_bootstrap" },
+    select: { snapshotDate: true },
+    orderBy: { snapshotDate: "desc" },
+  });
+  if (!run) {
+    throw new Error("active inventory snapshot T0 not found");
+  }
+  return run.snapshotDate;
 }

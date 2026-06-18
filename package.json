@@ -23,6 +23,7 @@
     "m4:allocate:mp:pilot": "npx tsx scripts/m4-allocate-mp-pilot.ts",
     "m4:allocate:mp:backfill": "npx tsx scripts/m4-allocate-mp-backfill.ts",
     "m4:stock:ledger:pilot": "npx tsx scripts/m4-stock-ledger-pilot.ts",
+    "m4:stock:ledger:backfill": "npx tsx scripts/m4-stock-ledger-backfill.ts",
     "m4:inventory:snapshot:dry-run": "npx tsx scripts/m4-inventory-snapshot-bootstrap-dry-run.ts",
     "m4:inventory:snapshot:duplicates-audit": "npx tsx scripts/m4-inventory-snapshot-duplicates-audit.ts",
     "m4:inventory:snapshot:bootstrap": "npx tsx scripts/m4-inventory-snapshot-bootstrap.ts",
