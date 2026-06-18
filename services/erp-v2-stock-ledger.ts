@@ -7,6 +7,8 @@ import {
   type ParseWarningsAuditReport,
   type UnitParseWarningInput,
 } from "@/lib/erp/v2/classify-unit-parse-warnings";
+import { normalizeStockMovementGrain } from "@/lib/erp/v2/normalize-stock-movement-grain";
+import { projectionKey } from "@/lib/erp/v2/compute-inventory-projection";
 import {
   validateOrderStockSales,
   validatePilotCoverage,
@@ -83,14 +85,21 @@ function buildSaleDrafts(
     return !c.blocksSale && unitIsSaleEligible(unitToInput(u));
   });
 
-  const drafts: StockSaleMovementDraft[] = eligible.map((u) => ({
-    tnOrderItemUnitId: u.id,
-    sku: String(u.sku ?? "").trim(),
-    talle: u.talle,
-    quantity: 1,
-    movementType: StockMovementType.sale,
-    idempotencyKey: saleIdempotencyKey(u.id),
-  }));
+  const drafts: StockSaleMovementDraft[] = eligible.map((u) => {
+    const grain = normalizeStockMovementGrain({
+      sku: String(u.sku ?? ""),
+      talle: u.talle,
+      owner: u.owner,
+    });
+    return {
+      tnOrderItemUnitId: u.id,
+      sku: grain.sku,
+      talle: grain.talle,
+      quantity: 1,
+      movementType: StockMovementType.sale,
+      idempotencyKey: saleIdempotencyKey(u.id),
+    };
+  });
 
   return {
     drafts,
@@ -375,7 +384,11 @@ export async function recordTnOrderStockSales(
             tnOrderItemUnitId: unit.id,
             sku: d.sku,
             talle: d.talle,
-            owner: unit.owner,
+            owner: normalizeStockMovementGrain({
+              sku: String(unit.sku ?? ""),
+              talle: unit.talle,
+              owner: unit.owner,
+            }).owner,
             quantity: 1,
             movementType: StockMovementType.sale,
             direction: StockMovementDirection.out,
@@ -388,6 +401,13 @@ export async function recordTnOrderStockSales(
               : {}),
           },
           update: {
+            sku: d.sku,
+            talle: d.talle,
+            owner: normalizeStockMovementGrain({
+              sku: String(unit.sku ?? ""),
+              talle: unit.talle,
+              owner: unit.owner,
+            }).owner,
             correlationId: opts?.correlationId ?? null,
             source: STOCK_LEDGER_SOURCE,
           },
@@ -643,4 +663,192 @@ export async function loadActiveSnapshotDate(): Promise<Date> {
     throw new Error("active inventory snapshot T0 not found");
   }
   return run.snapshotDate;
+}
+
+export type StockMovementGrainAudit = {
+  snapshotDate: string;
+  postT0TnOnlySales: number;
+  needsNormalization: number;
+  alreadyNormalized: number;
+  snapshotKeyMissAfterNormalize: number;
+  samples: Array<{
+    id: string;
+    sku: string;
+    talle: string | null;
+    owner: string | null;
+    nextSku: string;
+    nextTalle: string;
+    nextOwner: string;
+  }>;
+};
+
+export async function auditPostT0StockMovementGrain(
+  snapshotDate: Date
+): Promise<StockMovementGrainAudit> {
+  const prisma = getPrisma();
+
+  const [snapshotRun, movements] = await Promise.all([
+    prisma.inventorySnapshotRun.findFirst({
+      where: { isActive: true, source: "stock_maestro_bootstrap" },
+      select: { id: true },
+    }),
+    prisma.stockMovement.findMany({
+      where: {
+        source: STOCK_LEDGER_SOURCE,
+        movementType: StockMovementType.sale,
+        createdAt: { gte: snapshotDate },
+        tnOrder: { erpOrder: null },
+      },
+      select: {
+        id: true,
+        sku: true,
+        talle: true,
+        owner: true,
+      },
+      orderBy: { id: "asc" },
+    }),
+  ]);
+
+  if (!snapshotRun) throw new Error("active snapshot run missing");
+
+  const snapshotLines = await prisma.inventorySnapshotLine.findMany({
+    where: { runId: snapshotRun.id },
+    select: { sku: true, talle: true, owner: true },
+  });
+  const snapshotKeys = new Set(
+    snapshotLines.map((l) => projectionKey(l.sku, l.talle, l.owner))
+  );
+
+  let needsNormalization = 0;
+  let alreadyNormalized = 0;
+  let snapshotKeyMissAfterNormalize = 0;
+  const samples: StockMovementGrainAudit["samples"] = [];
+
+  for (const m of movements) {
+    const next = normalizeStockMovementGrain({
+      sku: m.sku,
+      talle: m.talle,
+      owner: m.owner,
+    });
+    const currentKey = projectionKey(m.sku, m.talle ?? "", m.owner ?? "8Q");
+    const nextKey = projectionKey(next.sku, next.talle, next.owner);
+
+    const needsUpdate =
+      next.sku !== String(m.sku ?? "").trim().toUpperCase() ||
+      next.talle !== String(m.talle ?? "").trim().toUpperCase() ||
+      next.owner !== (String(m.owner ?? "8Q").trim() || "8Q");
+
+    if (needsUpdate) {
+      needsNormalization += 1;
+      if (samples.length < 10) {
+        samples.push({
+          id: m.id,
+          sku: m.sku,
+          talle: m.talle,
+          owner: m.owner,
+          nextSku: next.sku,
+          nextTalle: next.talle,
+          nextOwner: next.owner,
+        });
+      }
+    } else {
+      alreadyNormalized += 1;
+    }
+
+    if (!snapshotKeys.has(nextKey) && nextKey !== currentKey) {
+      snapshotKeyMissAfterNormalize += 1;
+    }
+  }
+
+  return {
+    snapshotDate: snapshotDate.toISOString(),
+    postT0TnOnlySales: movements.length,
+    needsNormalization,
+    alreadyNormalized,
+    snapshotKeyMissAfterNormalize,
+    samples,
+  };
+}
+
+export type NormalizePostT0StockMovementsResult = {
+  dryRun: boolean;
+  snapshotDate: string;
+  scanned: number;
+  updated: number;
+  unchanged: number;
+  auditAfter: StockMovementGrainAudit;
+};
+
+export async function normalizePostT0StockMovements(opts?: {
+  dryRun?: boolean;
+  snapshotDate?: Date;
+}): Promise<NormalizePostT0StockMovementsResult> {
+  const prisma = getPrisma();
+  const snapshotDate = opts?.snapshotDate ?? (await loadActiveSnapshotDate());
+  const dryRun = opts?.dryRun ?? false;
+
+  const preAudit = await auditPostT0StockMovementGrain(snapshotDate);
+
+  const movements = await prisma.stockMovement.findMany({
+    where: {
+      source: STOCK_LEDGER_SOURCE,
+      movementType: StockMovementType.sale,
+      createdAt: { gte: snapshotDate },
+      tnOrder: { erpOrder: null },
+    },
+    select: { id: true, sku: true, talle: true, owner: true },
+  });
+
+  let updated = 0;
+  let unchanged = 0;
+
+  if (!dryRun) {
+    for (const m of movements) {
+      const next = normalizeStockMovementGrain({
+        sku: m.sku,
+        talle: m.talle,
+        owner: m.owner,
+      });
+
+      const needsUpdate =
+        next.sku !== String(m.sku ?? "").trim().toUpperCase() ||
+        next.talle !== String(m.talle ?? "").trim().toUpperCase() ||
+        next.owner !== (String(m.owner ?? "8Q").trim() || "8Q");
+
+      if (!needsUpdate) {
+        unchanged += 1;
+        continue;
+      }
+
+      await prisma.stockMovement.update({
+        where: { id: m.id },
+        data: {
+          sku: next.sku,
+          talle: next.talle,
+          owner: next.owner,
+        },
+      });
+      updated += 1;
+    }
+  } else {
+    updated = preAudit.needsNormalization;
+    unchanged = preAudit.alreadyNormalized;
+  }
+
+  const auditAfter = dryRun
+    ? {
+        ...preAudit,
+        needsNormalization: dryRun ? preAudit.needsNormalization : 0,
+        alreadyNormalized: dryRun ? 0 : preAudit.postT0TnOnlySales,
+      }
+    : await auditPostT0StockMovementGrain(snapshotDate);
+
+  return {
+    dryRun,
+    snapshotDate: snapshotDate.toISOString(),
+    scanned: movements.length,
+    updated,
+    unchanged,
+    auditAfter,
+  };
 }

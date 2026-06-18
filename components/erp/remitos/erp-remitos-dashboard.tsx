@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import {
   AlertCircle,
   Calendar,
@@ -13,6 +14,7 @@ import {
 } from "lucide-react";
 
 import { ErpRemitosKpiGrid } from "@/components/erp/remitos/erp-remitos-kpi-grid";
+import { ErpRemitosSourceBadge } from "@/components/erp/remitos/erp-remitos-source-badge";
 import { ErpRemitosTable } from "@/components/erp/remitos/erp-remitos-table";
 import { ErpDashboardLoading } from "@/components/erp/shared/erp-dashboard-loading";
 import { createFetchGuard, isAbortError } from "@/lib/erp/fetch-guard";
@@ -21,6 +23,7 @@ import {
   getPeriodRangeLabel,
   resolvePeriodRange,
 } from "@/lib/erp/period-query-range";
+import { parseRemitosDataSource } from "@/lib/erp/remitos-data-source";
 import {
   extractUniqueEstados,
   extractUniqueMetodosPago,
@@ -33,7 +36,10 @@ import {
   sortRemitosByDateDesc,
   type PeriodPreset,
 } from "@/lib/erp/remitos-date";
-import type { ErpRemito, ErpRemitosListResponse } from "@/types/erp";
+import { fetchAllV2CommercialOrders } from "@/lib/erp/v2/fetch-v2-orders-client";
+import { mapV2CommercialOrderToDisplayRow } from "@/lib/erp/v2/map-v2-order-to-display-row";
+import type { ErpRemitosListResponse } from "@/types/erp";
+import type { ErpRemitoDisplayRow } from "@/types/erp-remitos-display";
 
 const PERIOD_OPTIONS: { value: PeriodPreset; label: string }[] = [
   { value: "today", label: "Hoy" },
@@ -50,14 +56,22 @@ const inputClass =
 const ALL_FILTER = "all";
 
 export function ErpRemitosDashboard() {
-  const fetchGuardRef = useRef(createFetchGuard());
+  const searchParams = useSearchParams();
+  const dataSource = useMemo(
+    () => parseRemitosDataSource(searchParams.get("source")),
+    [searchParams]
+  );
 
-  const [remitos, setRemitos] = useState<ErpRemito[]>([]);
+  const fetchGuardRef = useRef(createFetchGuard());
+  const neonPeriodKeyRef = useRef<string | null>(null);
+
+  const [remitos, setRemitos] = useState<ErpRemitoDisplayRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [fetchedAt, setFetchedAt] = useState<string | null>(null);
   const [listActionUsed, setListActionUsed] = useState<string | null>(null);
+  const [neonUrlMeta, setNeonUrlMeta] = useState<string | null>(null);
 
   const [periodPreset, setPeriodPreset] =
     useState<PeriodPreset>(DEFAULT_PERIOD_PRESET);
@@ -70,7 +84,26 @@ export function ErpRemitosDashboard() {
   const [estadoFilter, setEstadoFilter] = useState(ALL_FILTER);
   const [metodoFilter, setMetodoFilter] = useState(ALL_FILTER);
 
-  const loadRemitos = useCallback(async (query: string) => {
+  const resolvedPeriod = useMemo(
+    () => resolvePeriodRange(periodPreset, dateFrom, dateTo),
+    [periodPreset, dateFrom, dateTo]
+  );
+
+  const periodLabel = useMemo(
+    () => getPeriodRangeLabel(periodPreset, dateFrom, dateTo),
+    [periodPreset, dateFrom, dateTo]
+  );
+
+  const rangeInvalid = resolvedPeriod.kind === "invalid";
+
+  const neonFetchRange = useMemo(() => {
+    if (resolvedPeriod.kind === "bounded") {
+      return { from: resolvedPeriod.from, to: resolvedPeriod.to };
+    }
+    return null;
+  }, [resolvedPeriod]);
+
+  const loadGasRemitos = useCallback(async (query: string) => {
     const guard = fetchGuardRef.current;
     const { reqId, signal } = guard.begin();
     setLoading(true);
@@ -96,6 +129,7 @@ export function ErpRemitosDashboard() {
       setRemitos(sortRemitosByDateDesc(json.data ?? []));
       setFetchedAt(json.fetchedAt ?? new Date().toISOString());
       setListActionUsed(json.listActionUsed ?? null);
+      setNeonUrlMeta(null);
     } catch (e: unknown) {
       if (isAbortError(e)) return;
       if (!guard.isCurrent(reqId)) return;
@@ -108,25 +142,102 @@ export function ErpRemitosDashboard() {
     }
   }, []);
 
+  const loadNeonOrders = useCallback(
+    async (query: string, range: { from: string; to: string } | null) => {
+      const guard = fetchGuardRef.current;
+      const { reqId, signal } = guard.begin();
+      setLoading(true);
+      setError(null);
+
+      try {
+        const json = await fetchAllV2CommercialOrders({
+          from: range?.from,
+          to: range?.to,
+          kpi: Boolean(range),
+          q: query,
+          signal,
+        });
+
+        if (!guard.isCurrent(reqId)) return;
+
+        if (!json.ok) {
+          throw new Error(
+            json.error ??
+              "Neon staging no disponible (revisá ERP_V2_DB_READ y DATABASE_URL)"
+          );
+        }
+
+        const rows = sortRemitosByDateDesc(
+          (json.data ?? []).map(mapV2CommercialOrderToDisplayRow)
+        );
+
+        setRemitos(rows);
+        setFetchedAt(json.fetchedAt ?? new Date().toISOString());
+        setListActionUsed(null);
+        setNeonUrlMeta(
+          json.urlMeta
+            ? `${json.urlMeta.database}@${json.urlMeta.host}`
+            : "neon-staging"
+        );
+        neonPeriodKeyRef.current = range
+          ? `${range.from}|${range.to}|${query.trim()}`
+          : `all|${query.trim()}`;
+      } catch (e: unknown) {
+        if (isAbortError(e)) return;
+        if (!guard.isCurrent(reqId)) return;
+        const message = e instanceof Error ? e.message : String(e);
+        setError(message);
+        setRemitos([]);
+        setListActionUsed(null);
+      } finally {
+        if (guard.isCurrent(reqId)) setLoading(false);
+      }
+    },
+    []
+  );
+
+  const reload = useCallback(
+    (query: string) => {
+      if (dataSource === "neon") {
+        return loadNeonOrders(query, neonFetchRange);
+      }
+      return loadGasRemitos(query);
+    },
+    [dataSource, loadGasRemitos, loadNeonOrders, neonFetchRange]
+  );
+
   useEffect(() => {
-    void loadRemitos("");
+    if (dataSource === "gas") {
+      void loadGasRemitos("");
+      return () => fetchGuardRef.current.cancel();
+    }
+
+    const periodKey = neonFetchRange
+      ? `${neonFetchRange.from}|${neonFetchRange.to}`
+      : "all";
+
+    if (rangeInvalid) {
+      setLoading(false);
+      return () => fetchGuardRef.current.cancel();
+    }
+
+    void loadNeonOrders("", neonFetchRange);
+    neonPeriodKeyRef.current = periodKey;
+
     return () => fetchGuardRef.current.cancel();
-  }, [loadRemitos]);
-
-  const resolvedPeriod = useMemo(
-    () => resolvePeriodRange(periodPreset, dateFrom, dateTo),
-    [periodPreset, dateFrom, dateTo]
-  );
-
-  const periodLabel = useMemo(
-    () => getPeriodRangeLabel(periodPreset, dateFrom, dateTo),
-    [periodPreset, dateFrom, dateTo]
-  );
-
-  const rangeInvalid = resolvedPeriod.kind === "invalid";
+  }, [
+    dataSource,
+    loadGasRemitos,
+    loadNeonOrders,
+    neonFetchRange,
+    rangeInvalid,
+  ]);
 
   const dateFiltered = useMemo(() => {
     if (resolvedPeriod.kind === "invalid") return [];
+    if (dataSource === "neon" && neonFetchRange) {
+      return remitos;
+    }
     if (resolvedPeriod.kind === "all") return remitos;
     return sortRemitosByDateDesc(
       filterRemitosByArtDateRange(
@@ -135,7 +246,7 @@ export function ErpRemitosDashboard() {
         resolvedPeriod.to
       )
     );
-  }, [remitos, resolvedPeriod]);
+  }, [remitos, resolvedPeriod, dataSource, neonFetchRange]);
 
   const handlePresetChange = (next: PeriodPreset) => {
     setPeriodPreset(next);
@@ -181,7 +292,7 @@ export function ErpRemitosDashboard() {
 
   const viewRows = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return metodoFiltered;
+    if (!q || dataSource === "neon") return metodoFiltered;
     return metodoFiltered.filter((r) =>
       [
         r.idRemito,
@@ -209,7 +320,7 @@ export function ErpRemitosDashboard() {
         .toLowerCase()
         .includes(q)
     );
-  }, [metodoFiltered, search]);
+  }, [metodoFiltered, search, dataSource]);
 
   const dataReady = !loading;
   const displayRows = dataReady ? viewRows : [];
@@ -224,7 +335,7 @@ export function ErpRemitosDashboard() {
 
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    void loadRemitos(search);
+    void reload(search);
   };
 
   const handleClearFilters = () => {
@@ -235,6 +346,9 @@ export function ErpRemitosDashboard() {
     setEstadoFilter(ALL_FILTER);
     setMetodoFilter(ALL_FILTER);
     setSearch("");
+    if (dataSource === "gas") {
+      void loadGasRemitos("");
+    }
   };
 
   const showDateEmpty =
@@ -261,30 +375,60 @@ export function ErpRemitosDashboard() {
     dateFiltered.length > 0 &&
     Boolean(search.trim());
 
-  const dataSourceLabel =
+  const gasDataSourceLabel =
     listActionUsed === "listRemitosFull"
       ? "Datos completos · REMITOS"
       : listActionUsed === "listRemitos"
         ? "Datos resumidos · fallback"
         : "Apps Script";
 
+  const isNeon = dataSource === "neon";
   const isInitialLoad = loading && remitos.length === 0;
+
+  const subtitle = isNeon
+    ? "Espejo comercial TN-led desde Neon staging. Total = tn_total; ERP enriquece operación."
+    : "Tabla SaaS read-only desde la hoja REMITOS. KPIs y filtros en frontend — sin recálculos financieros.";
+
+  const loadingLabel = isNeon
+    ? "Cargando órdenes TN desde Neon staging…"
+    : "Cargando remitos desde Apps Script…";
+
+  const emptyLabel = isNeon
+    ? "El listado llegó vacío desde Neon staging."
+    : "El listado llegó vacío desde Apps Script.";
 
   return (
     <div className="min-w-0 max-w-full space-y-6 p-4 sm:p-6 lg:p-8">
       <header className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
-          <div className="mb-2 inline-flex items-center gap-2 rounded-full border border-[hsl(var(--erp-border))] bg-[hsl(var(--erp-bg-card))] px-3 py-1 text-[11px] font-medium text-[hsl(var(--erp-fg-muted))]">
-            <span className="erp-live-dot h-1.5 w-1.5 rounded-full bg-[hsl(var(--erp-emerald))]" />
-            {dataSourceLabel}
+          <div className="mb-2 flex flex-wrap items-center gap-2">
+            <ErpRemitosSourceBadge
+              source={dataSource}
+              detail={
+                isNeon
+                  ? neonUrlMeta ?? "erp-8q-v2-staging"
+                  : gasDataSourceLabel
+              }
+            />
           </div>
           <h1 className="text-2xl font-semibold tracking-tight text-[hsl(var(--erp-fg))] sm:text-3xl">
             Remitos
           </h1>
           <p className="mt-1 max-w-2xl text-sm text-[hsl(var(--erp-fg-muted))]">
-            Tabla SaaS read-only desde la hoja REMITOS. KPIs y filtros en
-            frontend — sin recálculos financieros.
+            {subtitle}
           </p>
+          {isNeon && (
+            <p className="mt-2 text-[11px] text-[hsl(var(--erp-fg-subtle))]">
+              Staging:{" "}
+              <code className="rounded bg-[hsl(var(--erp-bg-hover))] px-1 py-0.5">
+                ?source=neon
+              </code>
+              . Default productivo sin cambios:{" "}
+              <code className="rounded bg-[hsl(var(--erp-bg-hover))] px-1 py-0.5">
+                /dashboard/remitos
+              </code>
+            </p>
+          )}
         </div>
         <div className="flex flex-col items-start gap-2 sm:items-end">
           {fetchedAt && dataReady && !error && (
@@ -298,8 +442,8 @@ export function ErpRemitosDashboard() {
           )}
           <button
             type="button"
-            onClick={() => void loadRemitos(search)}
-            disabled={loading}
+            onClick={() => void reload(search)}
+            disabled={loading || rangeInvalid}
             className="inline-flex h-9 items-center gap-2 rounded-lg border border-[hsl(var(--erp-border))] bg-[hsl(var(--erp-bg-card))] px-3 text-xs font-medium text-[hsl(var(--erp-fg-muted))] transition-colors hover:text-[hsl(var(--erp-fg))] disabled:opacity-50"
           >
             {loading ? (
@@ -313,12 +457,14 @@ export function ErpRemitosDashboard() {
       </header>
 
       {dataReady && !error && remitos.length > 0 && !rangeInvalid && (
-        <ErpRemitosKpiGrid remitos={displayRows} periodLabel={periodLabel} />
+        <ErpRemitosKpiGrid
+          remitos={displayRows}
+          periodLabel={periodLabel}
+          dataSource={dataSource}
+        />
       )}
 
-      {loading && remitos.length > 0 && (
-        <ErpDashboardLoading compact />
-      )}
+      {loading && remitos.length > 0 && <ErpDashboardLoading compact />}
 
       <div className="erp-card space-y-4 p-4 sm:p-5">
         <div className="flex items-center gap-2 text-sm font-medium text-[hsl(var(--erp-fg))]">
@@ -440,7 +586,7 @@ export function ErpRemitosDashboard() {
               <span className="font-semibold text-[hsl(var(--erp-fg))]">
                 {displayRows.length}
               </span>{" "}
-              remitos visibles
+              {isNeon ? "órdenes visibles" : "remitos visibles"}
               <span className="mx-2 text-[hsl(var(--erp-fg-subtle))]">·</span>
               <span className="text-[hsl(var(--erp-fg-subtle))]">Rango: </span>
               <span className="font-medium text-[hsl(var(--erp-accent))]">
@@ -473,7 +619,11 @@ export function ErpRemitosDashboard() {
             type="search"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Buscar ID, cliente, DNI, teléfono, TN, estado…"
+            placeholder={
+              isNeon
+                ? "Buscar TN, remito ERP, nombre…"
+                : "Buscar ID, cliente, DNI, teléfono, TN, estado…"
+            }
             className="h-10 w-full rounded-lg border border-[hsl(var(--erp-border))] bg-[hsl(var(--erp-bg-card))] pl-10 pr-4 text-sm text-[hsl(var(--erp-fg))] placeholder:text-[hsl(var(--erp-fg-subtle))] focus:border-[hsl(var(--erp-accent)/0.5)] focus:outline-none focus:ring-1 focus:ring-[hsl(var(--erp-accent)/0.35)]"
           />
         </form>
@@ -485,24 +635,40 @@ export function ErpRemitosDashboard() {
         </Link>
       </div>
 
-      {isInitialLoad && (
-        <ErpDashboardLoading label="Cargando remitos desde Apps Script…" />
-      )}
+      {isInitialLoad && <ErpDashboardLoading label={loadingLabel} />}
 
       {!loading && error && (
         <div className="erp-card flex flex-col items-center gap-4 border-rose-500/20 bg-rose-500/5 px-6 py-12 text-center">
           <AlertCircle className="h-10 w-10 text-rose-400" />
           <div>
             <p className="text-sm font-medium text-[hsl(var(--erp-fg))]">
-              No se pudieron cargar los remitos
+              {isNeon
+                ? "No se pudieron cargar órdenes TN desde Neon"
+                : "No se pudieron cargar los remitos"}
             </p>
             <p className="mt-1 max-w-md text-xs text-[hsl(var(--erp-fg-muted))]">
               {error}
             </p>
+            {isNeon && (
+              <p className="mt-3 max-w-md text-xs text-[hsl(var(--erp-fg-subtle))]">
+                Sin fallback automático a GAS. Para volver al modo legacy, abrí{" "}
+                <Link
+                  href="/dashboard/remitos"
+                  className="text-[hsl(var(--erp-accent))] underline-offset-2 hover:underline"
+                >
+                  /dashboard/remitos
+                </Link>{" "}
+                o usá{" "}
+                <code className="rounded bg-[hsl(var(--erp-bg-hover))] px-1">
+                  ?source=gas
+                </code>
+                .
+              </p>
+            )}
           </div>
           <button
             type="button"
-            onClick={() => void loadRemitos(search)}
+            onClick={() => void reload(search)}
             className="rounded-lg border border-[hsl(var(--erp-border))] bg-[hsl(var(--erp-bg-card))] px-4 py-2 text-sm font-medium text-[hsl(var(--erp-fg))]"
           >
             Reintentar
@@ -513,11 +679,9 @@ export function ErpRemitosDashboard() {
       {dataReady && !error && remitos.length === 0 && (
         <div className="erp-card flex flex-col items-center gap-2 py-16 text-center">
           <p className="text-sm font-medium text-[hsl(var(--erp-fg))]">
-            No hay remitos para mostrar
+            {isNeon ? "No hay órdenes TN para mostrar" : "No hay remitos para mostrar"}
           </p>
-          <p className="text-xs text-[hsl(var(--erp-fg-muted))]">
-            El listado llegó vacío desde Apps Script.
-          </p>
+          <p className="text-xs text-[hsl(var(--erp-fg-muted))]">{emptyLabel}</p>
         </div>
       )}
 
@@ -526,7 +690,9 @@ export function ErpRemitosDashboard() {
           <Calendar className="h-10 w-10 text-[hsl(var(--erp-fg-subtle))]" />
           <div>
             <p className="text-sm font-medium text-[hsl(var(--erp-fg))]">
-              No hay remitos en este rango
+              {isNeon
+                ? "No hay órdenes TN en este rango"
+                : "No hay remitos en este rango"}
             </p>
             <p className="mt-1 text-xs text-[hsl(var(--erp-fg-muted))]">
               Rango aplicado: {periodLabel}. Probá ampliar las fechas o limpiar
@@ -547,7 +713,7 @@ export function ErpRemitosDashboard() {
         <div className="erp-card flex flex-col items-center gap-2 py-12 text-center">
           <Filter className="h-10 w-10 text-[hsl(var(--erp-fg-subtle))]" />
           <p className="text-sm font-medium text-[hsl(var(--erp-fg))]">
-            Sin remitos con estos filtros
+            Sin resultados con estos filtros
           </p>
           <p className="text-xs text-[hsl(var(--erp-fg-muted))]">
             Probá otro estado, método de pago o limpiá los filtros.
@@ -567,7 +733,7 @@ export function ErpRemitosDashboard() {
       )}
 
       {dataReady && !error && displayRows.length > 0 && (
-        <ErpRemitosTable remitos={displayRows} />
+        <ErpRemitosTable remitos={displayRows} showNeonMeta={isNeon} />
       )}
     </div>
   );

@@ -6,6 +6,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 
+import { ErpRemitosNeonKpiGrid } from "@/components/erp/remitos/erp-remitos-neon-kpi-grid";
 import {
   computeRemitosKpis,
   formatRemitosCount,
@@ -13,6 +14,10 @@ import {
 } from "@/lib/erp/remitos-kpis";
 import { cn } from "@/lib/utils";
 import type { ErpRemito } from "@/types/erp";
+import type {
+  ErpRemitoDisplayRow,
+  RemitosDataSource,
+} from "@/types/erp-remitos-display";
 
 type RemitosKpiItem = {
   label: string;
@@ -30,15 +35,26 @@ const ACCENT_CLASS: Record<RemitosKpiItem["accent"], string> = {
 };
 
 type ErpRemitosKpiGridProps = {
-  remitos: ErpRemito[];
+  remitos: ErpRemito[] | ErpRemitoDisplayRow[];
   periodLabel?: string;
+  dataSource?: RemitosDataSource;
 };
 
 export function ErpRemitosKpiGrid({
   remitos,
   periodLabel,
+  dataSource = "gas",
 }: ErpRemitosKpiGridProps) {
-  const metrics = computeRemitosKpis(remitos);
+  if (dataSource === "neon") {
+    return (
+      <ErpRemitosNeonKpiGrid
+        remitos={remitos as ErpRemitoDisplayRow[]}
+        periodLabel={periodLabel}
+      />
+    );
+  }
+
+  const metrics = computeRemitosKpis(remitos as ErpRemito[]);
   const scopeHint = periodLabel
     ? `Según filtros activos · ${periodLabel}`
     : "Según filtros activos";

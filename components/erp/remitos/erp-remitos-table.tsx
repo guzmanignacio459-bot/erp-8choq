@@ -7,10 +7,12 @@ import {
   type PagoEnvioLabel,
 } from "@/lib/erp/remitos-shipping-display";
 import { cn } from "@/lib/utils";
-import type { ErpRemito } from "@/types/erp";
+import { ErpRemitosReconciliationBadge } from "@/components/erp/remitos/erp-remitos-reconciliation-badge";
+import type { ErpRemitoDisplayRow } from "@/types/erp-remitos-display";
 
 type ErpRemitosTableProps = {
-  remitos: ErpRemito[];
+  remitos: ErpRemitoDisplayRow[];
+  showNeonMeta?: boolean;
 };
 
 function formatAmountDisplay(value: string): string {
@@ -99,7 +101,7 @@ type DesktopColumn = {
   label: string;
   minW: string;
   align?: "right";
-  render: (remito: ErpRemito) => React.ReactNode;
+  render: (remito: ErpRemitoDisplayRow) => React.ReactNode;
 };
 
 const DESKTOP_COLUMNS: DesktopColumn[] = [
@@ -274,7 +276,10 @@ const DESKTOP_COLUMNS: DesktopColumn[] = [
   },
 ];
 
-export function ErpRemitosTable({ remitos }: ErpRemitosTableProps) {
+export function ErpRemitosTable({
+  remitos,
+  showNeonMeta = false,
+}: ErpRemitosTableProps) {
   return (
     <div className="erp-card min-w-0 overflow-hidden">
       <div className="flex flex-col gap-1 border-b border-[hsl(var(--erp-border-subtle))] px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-5">
@@ -282,7 +287,9 @@ export function ErpRemitosTable({ remitos }: ErpRemitosTableProps) {
           {remitos.length} remito{remitos.length === 1 ? "" : "s"}
         </p>
         <p className="text-[11px] text-[hsl(var(--erp-fg-subtle))]">
-          Columnas alineadas a hoja REMITOS · fecha desc
+          {showNeonMeta
+            ? "TN-led · tn_total comercial · reconciliación ERP"
+            : "Columnas alineadas a hoja REMITOS · fecha desc"}
         </p>
       </div>
 
@@ -291,6 +298,7 @@ export function ErpRemitosTable({ remitos }: ErpRemitosTableProps) {
           <ErpRemitoMobileCard
             key={`mobile-${remito.idRemito}-${index}`}
             remito={remito}
+            showNeonMeta={showNeonMeta}
           />
         ))}
       </div>
@@ -336,11 +344,18 @@ export function ErpRemitosTable({ remitos }: ErpRemitosTableProps) {
                           "whitespace-nowrap"
                       )}
                     >
-                      {col.render(remito)}
+                      {col.key === "estado" ? (
+                        <EstadoColumn
+                          remito={remito}
+                          showNeonMeta={showNeonMeta}
+                        />
+                      ) : (
+                        col.render(remito)
+                      )}
                     </td>
                   ))}
                   <td className="whitespace-nowrap px-4 py-3.5 text-right">
-                    <VerDetalleLink idRemito={remito.idRemito} />
+                    <VerDetalleLink remito={remito} />
                   </td>
                 </tr>
               ))}
@@ -355,7 +370,13 @@ export function ErpRemitosTable({ remitos }: ErpRemitosTableProps) {
   );
 }
 
-function ErpRemitoMobileCard({ remito }: { remito: ErpRemito }) {
+function ErpRemitoMobileCard({
+  remito,
+  showNeonMeta = false,
+}: {
+  remito: ErpRemitoDisplayRow;
+  showNeonMeta?: boolean;
+}) {
   const pagoEnvio = resolvePagoEnvioLabel(remito);
 
   return (
@@ -372,7 +393,7 @@ function ErpRemitoMobileCard({ remito }: { remito: ErpRemito }) {
             {remito.fechaDisplay || "—"}
           </p>
         </div>
-        <EstadoBadge estado={remito.estado} />
+        <EstadoColumn remito={remito} showNeonMeta={showNeonMeta} />
       </div>
 
       <div className="min-w-0 space-y-1">
@@ -478,7 +499,7 @@ function ErpRemitoMobileCard({ remito }: { remito: ErpRemito }) {
         </div>
       )}
 
-      <VerDetalleLink idRemito={remito.idRemito} fullWidth />
+      <VerDetalleLink remito={remito} fullWidth />
     </article>
   );
 }
@@ -495,15 +516,35 @@ function MobileAmountRow({ label, value }: { label: string; value: string }) {
 }
 
 function VerDetalleLink({
-  idRemito,
+  remito,
   fullWidth = false,
 }: {
-  idRemito: string;
+  remito: ErpRemitoDisplayRow;
   fullWidth?: boolean;
 }) {
+  const erpId = remito.neonMeta?.erpOrderId ?? remito.idRemito;
+  const canLink =
+    !remito.neonMeta || remito.neonMeta.hasErpRemito
+      ? Boolean(erpId && !erpId.startsWith("TN-"))
+      : false;
+
+  if (!canLink) {
+    return (
+      <span
+        className={cn(
+          "inline-flex items-center justify-center gap-1 rounded-md border border-dashed border-[hsl(var(--erp-border))] px-2.5 py-1.5 text-[11px] text-[hsl(var(--erp-fg-subtle))]",
+          fullWidth && "w-full py-2"
+        )}
+        title="Sin remito ERP — detalle GAS no disponible"
+      >
+        TN only
+      </span>
+    );
+  }
+
   return (
     <Link
-      href={`/dashboard/remitos/${encodeURIComponent(idRemito)}`}
+      href={`/dashboard/remitos/${encodeURIComponent(erpId)}`}
       className={cn(
         "inline-flex items-center justify-center gap-1 rounded-md border border-[hsl(var(--erp-border))] bg-[hsl(var(--erp-bg-hover))] px-2.5 py-1.5 text-[11px] font-medium text-[hsl(var(--erp-fg-muted))] transition-colors hover:border-[hsl(var(--erp-accent)/0.35)] hover:text-[hsl(var(--erp-fg))]",
         fullWidth && "w-full py-2"
@@ -512,6 +553,23 @@ function VerDetalleLink({
       Ver detalle
       <ExternalLink className="h-3 w-3 shrink-0" />
     </Link>
+  );
+}
+
+function EstadoColumn({
+  remito,
+  showNeonMeta,
+}: {
+  remito: ErpRemitoDisplayRow;
+  showNeonMeta: boolean;
+}) {
+  return (
+    <div className="flex min-w-0 flex-col gap-1">
+      <EstadoBadge estado={remito.estado} />
+      {showNeonMeta && remito.neonMeta ? (
+        <ErpRemitosReconciliationBadge meta={remito.neonMeta} compact />
+      ) : null}
+    </div>
   );
 }
 

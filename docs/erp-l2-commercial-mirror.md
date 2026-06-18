@@ -81,9 +81,23 @@ Reporte: `_wip/l2-compare-remitos.json`
 
 ---
 
+## L2.2 — UI staging Neon (dashboard remitos)
+
+| URL | Fuente | Endpoint |
+|-----|--------|----------|
+| `/dashboard/remitos` | GAS legacy (default) | `/api/erp/remitos` |
+| `/dashboard/remitos?source=neon` | TN-led staging | `/api/v2/orders` |
+
+- Badge visual: **Modo GAS legacy** vs **Modo Neon staging (TN)**.
+- Neon muestra `commercialStatus`, `reconciliationStatus`, `tn_total` — sin recalcular facturación.
+- KPIs Neon en dos bloques: **Comercial (tn_orders / tn_created_at)** y **Operativo (erp_orders / fecha_erp)** — aviso visual en UI.
+- Error Neon: mensaje claro; **sin** fallback automático a GAS.
+- Producción y default productivo sin cambios.
+
+---
+
 ## Fuera de alcance L2.1
 
-- UI / `ErpRemitosDashboard`
 - Deploy prod
 - Escritura DB desde API
 - Prorrateos / recálculo netos
