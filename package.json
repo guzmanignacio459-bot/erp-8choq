@@ -35,6 +35,7 @@
     "m5:unit:expand:live": "npx tsx scripts/m5-unit-expansion-live.ts",
     "m5:alloc:commercial:live": "npx tsx scripts/m5-allocate-commercial-live.ts",
     "m5:alloc:mp:live": "npx tsx scripts/m5-allocate-mp-live.ts",
+    "m5:stock:ledger:live": "npx tsx scripts/m5-stock-ledger-live.ts",
     "m3:mp:backfill": "node scripts/m3-mp-backfill-tn-link.mjs",
     "m3:mp:sync:pilot": "node scripts/m3-mp-sync-pilot.mjs",
     "m3:mp:refresh": "node scripts/m3-mp-refresh.mjs",
