@@ -45,6 +45,14 @@ enum TnCommercialStatus {
   pendiente
 }
 
+/// Estado de una corrida del pipeline live M5.4
+enum PipelineRunStatus {
+  running
+  success
+  failed
+  skipped_locked
+}
+
 /// Fulfillment ecommerce (stub M1 — sin lógica aún)
 enum TnFulfillmentStatus {
   pending
@@ -495,4 +503,31 @@ model SyncState {
   updatedAt     DateTime  @updatedAt @map("updated_at")
 
   @@map("sync_state")
+}
+
+/// Historial de corridas del pipeline live M5.4 (scheduler + monitoring)
+model PipelineRun {
+  id                           String            @id @default(cuid())
+  startedAt                    DateTime          @map("started_at")
+  finishedAt                   DateTime?         @map("finished_at")
+  durationMs                   Int?              @map("duration_ms")
+  status                       PipelineRunStatus
+  ordersImported               Int               @default(0) @map("orders_imported")
+  unitsCreated                 Int               @default(0) @map("units_created")
+  commercialAllocationsCreated Int               @default(0) @map("commercial_allocations_created")
+  mpAllocationsCreated         Int               @default(0) @map("mp_allocations_created")
+  stockMovementsCreated        Int               @default(0) @map("stock_movements_created")
+  warningsCount                Int               @default(0) @map("warnings_count")
+  errorsCount                  Int               @default(0) @map("errors_count")
+  pipelineVersion              String            @map("pipeline_version")
+  reportJson                   Json?             @map("report_json")
+  failedStage                  String?           @map("failed_stage")
+  triggeredBy                  String            @default("scheduler") @map("triggered_by")
+  correlationId                String?           @map("correlation_id")
+  alertEmailSent               Boolean           @default(false) @map("alert_email_sent")
+  createdAt                    DateTime          @default(now()) @map("created_at")
+
+  @@index([startedAt])
+  @@index([status])
+  @@map("pipeline_runs")
 }
