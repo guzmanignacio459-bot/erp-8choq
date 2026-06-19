@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
+  Activity,
   BarChart3,
   Box,
   CreditCard,
@@ -24,6 +25,7 @@ import { cn } from "@/lib/utils";
 import { ERP_NAV_SECTIONS } from "@/components/erp/sidebar/nav-config";
 
 const ICON_MAP: Record<string, LucideIcon> = {
+  activity: Activity,
   "layout-dashboard": LayoutDashboard,
   "shopping-bag": ShoppingBag,
   "trending-up": TrendingUp,

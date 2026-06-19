@@ -39,6 +39,8 @@
     "m5:pipeline:live": "npx tsx scripts/m5-live-pipeline.ts",
     "m5:scheduler:start": "npx tsx scripts/m5-pipeline-scheduler.ts",
     "m5:scheduler:once": "npx tsx scripts/m5-pipeline-scheduler.ts --once",
+    "m5:burnin:report": "npx tsx scripts/m5-burn-in-report.ts",
+    "m5:health:check": "npx tsx scripts/m5-health-check.ts",
     "m3:mp:backfill": "node scripts/m3-mp-backfill-tn-link.mjs",
     "m3:mp:sync:pilot": "node scripts/m3-mp-sync-pilot.mjs",
     "m3:mp:refresh": "node scripts/m3-mp-refresh.mjs",

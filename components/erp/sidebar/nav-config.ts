@@ -104,6 +104,13 @@ export const ERP_NAV_SECTIONS: ErpNavSection[] = [
     title: "Sistema",
     items: [
       {
+        id: "system",
+        label: "Sistema",
+        href: "/dashboard/system",
+        icon: "activity",
+        badge: "V2",
+      },
+      {
         id: "config",
         label: "Configuración",
         href: "/dashboard/configuracion",

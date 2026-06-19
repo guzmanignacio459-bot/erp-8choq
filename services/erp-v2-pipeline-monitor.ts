@@ -11,7 +11,12 @@ import {
 import { withPipelineLock } from "@/lib/erp/v2/pipeline-lock";
 import { getPrisma } from "@/lib/db/prisma";
 import { runLivePipeline } from "@/services/erp-v2-live-pipeline";
+import {
+  getPipelineKpis,
+  runPipelineHealthCheck,
+} from "@/services/erp-v2-pipeline-health";
 import type { LivePipelineReport } from "@/types/erp-v2-live-pipeline";
+import type { PipelineHealthCheck } from "@/types/erp-v2-pipeline-health";
 import type {
   MonitoredPipelineResult,
   PipelineAlertReason,
@@ -26,13 +31,15 @@ function ordersImportedFromReport(report: LivePipelineReport): number {
 }
 
 function resolveAlertReason(
-  report: LivePipelineReport
+  report: LivePipelineReport,
+  healthCheck?: PipelineHealthCheck
 ): PipelineAlertReason | null {
   if (report.import.status === "failed") return "import_fail";
   if (!report.projection.vI4 || report.projection.status === "failed") {
     return "projection_fail";
   }
   if (!report.success) return "pipeline_fail";
+  if (healthCheck?.overall === "FAIL") return "drift_detected";
   return null;
 }
 
@@ -42,12 +49,15 @@ function resolveAlertStage(
 ): string {
   if (reason === "import_fail") return "import";
   if (reason === "projection_fail") return "projection";
+  if (reason === "drift_detected") return "drift";
+  if (reason === "success_rate_low") return "monitoring";
   return report.failedStage ?? "pipeline";
 }
 
 function resolveAlertError(
   report: LivePipelineReport,
-  reason: PipelineAlertReason
+  reason: PipelineAlertReason,
+  healthCheck?: PipelineHealthCheck
 ): string {
   if (reason === "import_fail") {
     return report.import.errors.join("; ") || "import stage failed";
@@ -55,8 +65,21 @@ function resolveAlertError(
   if (reason === "projection_fail") {
     return "projection: V-I4 failed";
   }
+  if (reason === "drift_detected" && healthCheck) {
+    const failed = Object.values(healthCheck.checks)
+      .filter((c) => !c.pass)
+      .map((c) => `${c.id}: ${c.message}`);
+    return failed.join("; ") || "drift detected";
+  }
+  if (reason === "success_rate_low") {
+    return "success rate below 95% in last 24h";
+  }
   return report.errors.join("; ") || "pipeline failed";
 }
+
+type StoredPipelineReport = LivePipelineReport & {
+  healthCheck: PipelineHealthCheck;
+};
 
 async function createRunningRun(input: {
   triggeredBy: PipelineTrigger;
@@ -80,7 +103,7 @@ async function finalizeRun(
   runId: string,
   input: {
     status: PipelineRunStatus;
-    report: LivePipelineReport | null;
+    report: StoredPipelineReport | null;
     alertEmailSent: boolean;
     finishedAt: Date;
     durationMs: number;
@@ -133,9 +156,22 @@ async function recordSkippedLocked(
 
 async function maybeSendFailureAlert(input: {
   runId: string;
-  report: LivePipelineReport;
+  report: StoredPipelineReport;
+  kpis24h: Awaited<ReturnType<typeof getPipelineKpis>>;
 }): Promise<{ sent: boolean; reason: PipelineAlertReason | null }> {
-  const alertReason = resolveAlertReason(input.report);
+  const { report, kpis24h } = input;
+  const healthCheck = report.healthCheck;
+
+  let alertReason = resolveAlertReason(report, healthCheck);
+
+  if (
+    !alertReason &&
+    kpis24h.totalRuns >= 5 &&
+    kpis24h.successRate < 0.95
+  ) {
+    alertReason = "success_rate_low";
+  }
+
   if (!alertReason) {
     return { sent: false, reason: null };
   }
@@ -143,9 +179,9 @@ async function maybeSendFailureAlert(input: {
   const payload = buildPipelineAlertPayload({
     runId: input.runId,
     reason: alertReason,
-    stage: resolveAlertStage(input.report, alertReason),
-    error: resolveAlertError(input.report, alertReason),
-    correlationId: input.report.correlationId,
+    stage: resolveAlertStage(report, alertReason),
+    error: resolveAlertError(report, alertReason, healthCheck),
+    correlationId: report.correlationId,
   });
 
   const email = await sendPipelineAlertEmail(payload);
@@ -170,13 +206,23 @@ export async function executeMonitoredPipeline(opts?: {
         correlationId,
       });
 
-      const alert = await maybeSendFailureAlert({ runId, report });
+      const healthCheck = await runPipelineHealthCheck();
+      const enrichedReport: StoredPipelineReport = { ...report, healthCheck };
+      const kpis24h = await getPipelineKpis(24);
+      const alert = await maybeSendFailureAlert({
+        runId,
+        report: enrichedReport,
+        kpis24h,
+      });
       const finishedAt = new Date();
       const durationMs = finishedAt.getTime() - started;
 
+      const runStatus =
+        report.success && healthCheck.overall !== "FAIL" ? "success" : "failed";
+
       await finalizeRun(runId, {
-        status: report.success ? "success" : "failed",
-        report,
+        status: runStatus,
+        report: enrichedReport,
         alertEmailSent: alert.sent,
         finishedAt,
         durationMs,
@@ -185,11 +231,15 @@ export async function executeMonitoredPipeline(opts?: {
       return {
         runId,
         lockAcquired: true,
-        report,
+        report: enrichedReport,
         alertSent: alert.sent,
         alertReason: alert.reason,
-        status: report.success ? ("success" as const) : ("failed" as const),
-        error: report.success ? null : report.errors.join("; ") || "pipeline failed",
+        status: runStatus === "success" ? ("success" as const) : ("failed" as const),
+        error:
+          runStatus === "success"
+            ? null
+            : report.errors.join("; ") ||
+              `health: ${healthCheck.overall}`,
       };
     } catch (err) {
       const finishedAt = new Date();
