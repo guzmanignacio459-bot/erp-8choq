@@ -9,7 +9,8 @@ export type DriftCheckId =
   | "units"
   | "commercial"
   | "stock"
-  | "mp";
+  | "mp"
+  | "pipeline_stale";
 
 export type DriftCheckResult = {
   id: DriftCheckId;
@@ -73,6 +74,14 @@ export type PipelineRunSummary = {
   healthStatus: HealthCheckStatus | null;
 };
 
+export type PipelineStaleSummary = {
+  stale: boolean;
+  thresholdMinutes: number;
+  minutesSinceLastRun: number | null;
+  lastRunAt: string | null;
+  lastRunStatus: string | null;
+};
+
 export type PipelineSystemHealthResponse = {
   ok: boolean;
   fetchedAt: string;
@@ -80,5 +89,6 @@ export type PipelineSystemHealthResponse = {
   kpis24h: PipelineKpis;
   recentRuns: PipelineRunSummary[];
   healthCheck: PipelineHealthCheck | null;
+  pipelineStale: PipelineStaleSummary | null;
   error?: string;
 };

@@ -4,7 +4,7 @@
 
 import type { LivePipelineReport } from "@/types/erp-v2-live-pipeline";
 
-export const PIPELINE_VERSION = "M5.5";
+export const PIPELINE_VERSION = "M5.6";
 
 export type PipelineTrigger = "scheduler" | "manual";
 
@@ -14,7 +14,8 @@ export type PipelineAlertReason =
   | "pipeline_fail"
   | "unhandled_exception"
   | "drift_detected"
-  | "success_rate_low";
+  | "success_rate_low"
+  | "pipeline_stale";
 
 export type PipelineAlertPayload = {
   runId: string;

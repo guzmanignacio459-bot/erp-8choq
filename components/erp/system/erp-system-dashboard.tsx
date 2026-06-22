@@ -112,6 +112,7 @@ export function ErpSystemDashboard() {
   const latest = data?.latestRun;
   const kpis = data?.kpis24h;
   const health = data?.healthCheck;
+  const pipelineStale = data?.pipelineStale;
 
   return (
     <div className="mx-auto max-w-7xl space-y-6 p-4 sm:p-6">
@@ -148,6 +149,27 @@ export function ErpSystemDashboard() {
         <div className="erp-card flex items-start gap-3 border-[hsl(var(--erp-rose)/0.35)] p-4 text-sm text-[hsl(var(--erp-rose))]">
           <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
           <p>{error}</p>
+        </div>
+      )}
+
+      {pipelineStale?.stale && (
+        <div className="erp-card flex items-start gap-3 border-[hsl(var(--erp-rose)/0.45)] bg-[hsl(var(--erp-rose)/0.06)] p-4 text-sm text-[hsl(var(--erp-rose))]">
+          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+          <div>
+            <p className="font-medium">Pipeline stale — sin corrida reciente</p>
+            <p className="mt-1 text-[hsl(var(--erp-fg-muted))]">
+              Última corrida{" "}
+              {pipelineStale.lastRunAt
+                ? `hace ${pipelineStale.minutesSinceLastRun} min (${new Date(pipelineStale.lastRunAt).toLocaleString("es-AR")})`
+                : "nunca registrada"}
+              . Umbral: {pipelineStale.thresholdMinutes} min. Verificar GitHub
+              Actions cron o ejecutar{" "}
+              <code className="rounded bg-[hsl(var(--erp-bg-hover))] px-1 py-0.5 text-xs">
+                m5:scheduler:once
+              </code>
+              .
+            </p>
+          </div>
         </div>
       )}
 

@@ -6,6 +6,11 @@ import { validateInventoryProjection } from "@/lib/erp/v2/validate-inventory-pro
 import { getPrisma } from "@/lib/db/prisma";
 import { loadProjectionValidationInputs } from "@/services/erp-v2-inventory-projection";
 import { loadActiveSnapshotDate } from "@/services/erp-v2-stock-ledger";
+import { checkPipelineStaleDrift } from "@/services/erp-v2-pipeline-stale-alert";
+import {
+  computePipelineStale,
+  type PipelineStaleStatus,
+} from "@/lib/erp/v2/pipeline-stale";
 import type { LivePipelineReport } from "@/types/erp-v2-live-pipeline";
 import type {
   BurnInReport,
@@ -22,7 +27,13 @@ const MP_TOLERANCE = 0.02;
 
 function classifyOverall(checks: Record<DriftCheckId, DriftCheckResult>): HealthCheckStatus {
   const values = Object.values(checks);
-  if (values.some((c) => !c.pass && c.id === "projection")) return "FAIL";
+  if (
+    values.some(
+      (c) => !c.pass && (c.id === "projection" || c.id === "pipeline_stale")
+    )
+  ) {
+    return "FAIL";
+  }
   if (values.filter((c) => !c.pass).length >= 2) return "FAIL";
   if (values.some((c) => !c.pass)) return "WARNING";
   return "PASS";
@@ -194,15 +205,17 @@ async function checkMpDrift(snapshotDate: Date): Promise<DriftCheckResult> {
 export async function runPipelineHealthCheck(): Promise<PipelineHealthCheck> {
   const snapshotDate = await loadActiveSnapshotDate();
 
-  const [projection, units, commercial, stock, mp] = await Promise.all([
-    checkProjectionDrift(),
-    checkUnitsDrift(snapshotDate),
-    checkCommercialDrift(snapshotDate),
-    checkStockDrift(snapshotDate),
-    checkMpDrift(snapshotDate),
-  ]);
+  const [projection, units, commercial, stock, mp, pipelineStale] =
+    await Promise.all([
+      checkProjectionDrift(),
+      checkUnitsDrift(snapshotDate),
+      checkCommercialDrift(snapshotDate),
+      checkStockDrift(snapshotDate),
+      checkMpDrift(snapshotDate),
+      checkPipelineStaleDrift(),
+    ]);
 
-  const checks = { projection, units, commercial, stock, mp };
+  const checks = { projection, units, commercial, stock, mp, pipeline_stale: pipelineStale };
   const overall = classifyOverall(checks);
   const driftDetected = Object.values(checks).some(
     (c) => !c.pass && c.id !== "projection"
@@ -317,15 +330,31 @@ export function toPipelineRunSummary(
   };
 }
 
+function toPipelineStaleSummary(
+  check: DriftCheckResult
+): PipelineStaleStatus {
+  return computePipelineStale({
+    lastRunStartedAt:
+      typeof check.details.lastRunAt === "string"
+        ? new Date(check.details.lastRunAt)
+        : null,
+    lastRunStatus:
+      typeof check.details.lastRunStatus === "string"
+        ? check.details.lastRunStatus
+        : null,
+  });
+}
+
 export async function getPipelineSystemHealth(): Promise<{
   latestRun: PipelineRunSummary | null;
   kpis24h: PipelineKpis;
   recentRuns: PipelineRunSummary[];
   healthCheck: PipelineHealthCheck | null;
+  pipelineStale: PipelineStaleStatus | null;
 }> {
   const prisma = getPrisma();
 
-  const [latest, recent, kpis24h] = await Promise.all([
+  const [latest, recent, kpis24h, healthCheck] = await Promise.all([
     prisma.pipelineRun.findFirst({
       where: { status: { in: ["success", "failed"] } },
       orderBy: { startedAt: "desc" },
@@ -335,23 +364,17 @@ export async function getPipelineSystemHealth(): Promise<{
       take: 20,
     }),
     getPipelineKpis(24),
+    runPipelineHealthCheck(),
   ]);
 
-  const latestParsed = latest ? parseReportJson(latest.reportJson) : null;
+  const staleCheck = healthCheck.checks.pipeline_stale;
 
   return {
     latestRun: latest ? toPipelineRunSummary(latest) : null,
     kpis24h,
     recentRuns: recent.map(toPipelineRunSummary),
-    healthCheck:
-      latest?.reportJson &&
-      typeof latest.reportJson === "object" &&
-      "healthCheck" in (latest.reportJson as object)
-        ? ((latest.reportJson as { healthCheck: PipelineHealthCheck }).healthCheck ??
-          null)
-        : latestParsed?.healthStatus
-          ? await runPipelineHealthCheck()
-          : null,
+    healthCheck,
+    pipelineStale: staleCheck ? toPipelineStaleSummary(staleCheck) : null,
   };
 }
 
