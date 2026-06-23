@@ -1,0 +1,18 @@
+# PostgreSQL local staging — Sprint L1 (NO prod)
+# Uso: docker compose -f docker-compose.l1.yml up -d
+# DATABASE_URL=postgresql://erp8q:erp8q_local@localhost:5433/erp8q_l1_staging
+
+services:
+  postgres-l1:
+    image: postgres:16-alpine
+    ports:
+      - "5433:5432"
+    environment:
+      POSTGRES_USER: erp8q
+      POSTGRES_PASSWORD: erp8q_local
+      POSTGRES_DB: erp8q_l1_staging
+    volumes:
+      - erp8q_l1_pg:/var/lib/postgresql/data
+
+volumes:
+  erp8q_l1_pg:

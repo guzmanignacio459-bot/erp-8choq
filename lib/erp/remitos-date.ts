@@ -1,0 +1,214 @@
+import {
+  artDefaultRange30d,
+  formatArtDateRangeLabel,
+  isInstantInArtRange,
+  parseArtInstantMs,
+} from "@/lib/erp/art-date";
+import type { ErpRemito } from "@/types/erp";
+
+export { artDefaultRange30d, formatArtDateRangeLabel };
+
+export type PeriodPreset =
+  | "today"
+  | "yesterday"
+  | "7d"
+  | "30d"
+  | "custom"
+  | "all";
+
+/** Parsea Fecha de remito (ISO, dd/mm/yyyy, yyyy-mm-dd) sin reinterpretar montos */
+export function parseRemitoFecha(fecha: string): Date | null {
+  const raw = fecha.trim();
+  if (!raw) return null;
+
+  const iso = Date.parse(raw);
+  if (!Number.isNaN(iso)) {
+    const d = new Date(iso);
+    if (!Number.isNaN(d.getTime())) return d;
+  }
+
+  const slash = raw.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
+  if (slash) {
+    const day = Number(slash[1]);
+    const month = Number(slash[2]) - 1;
+    let year = Number(slash[3]);
+    if (year < 100) year += 2000;
+    const d = new Date(year, month, day);
+    if (!Number.isNaN(d.getTime())) return d;
+  }
+
+  const isoDate = raw.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (isoDate) {
+    const d = new Date(
+      Number(isoDate[1]),
+      Number(isoDate[2]) - 1,
+      Number(isoDate[3])
+    );
+    if (!Number.isNaN(d.getTime())) return d;
+  }
+
+  return null;
+}
+
+function startOfDay(d: Date): Date {
+  const x = new Date(d);
+  x.setHours(0, 0, 0, 0);
+  return x;
+}
+
+function endOfDay(d: Date): Date {
+  const x = new Date(d);
+  x.setHours(23, 59, 59, 999);
+  return x;
+}
+
+function isSameCalendarDay(a: Date, b: Date): boolean {
+  return (
+    a.getFullYear() === b.getFullYear() &&
+    a.getMonth() === b.getMonth() &&
+    a.getDate() === b.getDate()
+  );
+}
+
+function extractIdNumber(id: string): number {
+  const match = id.match(/(\d+)/);
+  return match ? Number(match[1]) : 0;
+}
+
+function remitoFechaSortKey(r: ErpRemito): string {
+  return r.fechaRaw || r.fechaDisplay || "";
+}
+
+/** Más reciente primero; fallback por ID Remito */
+export function compareRemitosByRecency(a: ErpRemito, b: ErpRemito): number {
+  const da = parseRemitoFecha(remitoFechaSortKey(a));
+  const db = parseRemitoFecha(remitoFechaSortKey(b));
+
+  if (da && db) return db.getTime() - da.getTime();
+  if (da && !db) return -1;
+  if (!da && db) return 1;
+
+  return extractIdNumber(b.idRemito) - extractIdNumber(a.idRemito);
+}
+
+export function sortRemitosByDateDesc(remitos: ErpRemito[]): ErpRemito[] {
+  return [...remitos].sort(compareRemitosByRecency);
+}
+
+/** Filtra remitos por rango calendario ART (YYYY-MM-DD desde type="date"). */
+export function filterRemitosByArtDateRange(
+  remitos: ErpRemito[],
+  fromYmd: string,
+  toYmd: string
+): ErpRemito[] {
+  const from = fromYmd.trim();
+  const to = toYmd.trim();
+  if (!from || !to) return remitos;
+
+  return remitos.filter((r) => {
+    const ms = parseArtInstantMs(remitoFechaSortKey(r));
+    if (ms == null) return false;
+    return isInstantInArtRange(ms, from, to);
+  });
+}
+
+export function filterRemitosByPeriod(
+  remitos: ErpRemito[],
+  preset: PeriodPreset,
+  customFrom?: string,
+  customTo?: string
+): ErpRemito[] {
+  if (preset === "all") return remitos;
+
+  const now = new Date();
+  const todayStart = startOfDay(now);
+
+  let rangeStart: Date;
+  let rangeEnd: Date = endOfDay(now);
+
+  switch (preset) {
+    case "today":
+      rangeStart = todayStart;
+      break;
+    case "yesterday": {
+      const y = new Date(todayStart);
+      y.setDate(y.getDate() - 1);
+      rangeStart = y;
+      rangeEnd = endOfDay(y);
+      break;
+    }
+    case "7d": {
+      rangeStart = new Date(todayStart);
+      rangeStart.setDate(rangeStart.getDate() - 6);
+      break;
+    }
+    case "30d": {
+      rangeStart = new Date(todayStart);
+      rangeStart.setDate(rangeStart.getDate() - 29);
+      break;
+    }
+    case "custom": {
+      const from = customFrom ? parseRemitoFecha(customFrom) : null;
+      const to = customTo ? parseRemitoFecha(customTo) : null;
+      if (!from && !to) return remitos;
+      rangeStart = from ? startOfDay(from) : new Date(0);
+      rangeEnd = to ? endOfDay(to) : endOfDay(now);
+      break;
+    }
+    default:
+      return remitos;
+  }
+
+  return remitos.filter((r) => {
+    const d = parseRemitoFecha(remitoFechaSortKey(r));
+    if (!d) return false;
+    return d.getTime() >= rangeStart.getTime() && d.getTime() <= rangeEnd.getTime();
+  });
+}
+
+export function filterRemitosByDay(
+  remitos: ErpRemito[],
+  dayISO: string
+): ErpRemito[] {
+  const target =
+    parseRemitoFecha(dayISO) ??
+    (dayISO ? new Date(`${dayISO}T12:00:00`) : null);
+
+  if (!target || Number.isNaN(target.getTime())) return remitos;
+
+  return remitos.filter((r) => {
+    const d = parseRemitoFecha(remitoFechaSortKey(r));
+    return d ? isSameCalendarDay(d, target) : false;
+  });
+}
+
+const PERIOD_LABELS: Record<Exclude<PeriodPreset, "custom">, string> = {
+  today: "Hoy",
+  yesterday: "Ayer",
+  "7d": "Últimos 7 días",
+  "30d": "Últimos 30 días",
+  all: "Todos los períodos",
+};
+
+/** @deprecated Usar getPeriodRangeLabel de period-query-range.ts */
+export function getAppliedPeriodLabel(options: {
+  preset: PeriodPreset;
+  customFrom: string;
+  customTo: string;
+}): string {
+  if (options.preset === "custom") {
+    const from = options.customFrom.trim();
+    const to = options.customTo.trim();
+    if (from && to) {
+      if (from === to) return formatArtDateRangeLabel(from, to);
+      return `Del ${from} al ${to}`;
+    }
+    if (from) return `Desde ${from} (falta Hasta)`;
+    if (to) return `Hasta ${to} (falta Desde)`;
+    return "Rango personalizado (incompleto)";
+  }
+
+  return PERIOD_LABELS[options.preset];
+}
+
+export const DEFAULT_PERIOD_PRESET: PeriodPreset = "30d";

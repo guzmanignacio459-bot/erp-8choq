@@ -323,6 +323,11 @@ export async function POST(req: Request) {
     // - legacy: { paymentId, tnOrderId?, force }
     const force = Boolean(body?.force);
 
+    const idRemitoProvided =
+      body?.idRemito != null && String(body.idRemito).trim() !== ""
+        ? String(body.idRemito).trim()
+        : null;
+
     const tnOrderIdProvided =
       body?.tnOrderId != null && String(body.tnOrderId).trim() !== ""
         ? String(body.tnOrderId).trim()
@@ -348,7 +353,8 @@ export async function POST(req: Request) {
     let confidence = tnOrderIdProvided ? 1.0 : 0;
 
     // 1) Si tenemos tnOrderId: idempotencia contra Sheets (si APPS_SCRIPT_TOKEN existe)
-    if (tnOrderId) {
+    // Omitir si idRemito apunta a un remito hermano específico sin MP
+    if (tnOrderId && !idRemitoProvided) {
       const lookup = await withRetry(() => gasGetRemitoByTnOrderId(tnOrderId!), {
         retries: 2,
         baseMs: 400,
@@ -463,7 +469,7 @@ export async function POST(req: Request) {
     }
 
     // 5) Segunda barrera idempotente (si al principio no pudimos lookup porque tnOrderId no estaba)
-    if (tnOrderId) {
+    if (tnOrderId && !idRemitoProvided) {
       const lookup2 = await withRetry(() => gasGetRemitoByTnOrderId(tnOrderId!), {
         retries: 2,
         baseMs: 400,
@@ -495,6 +501,7 @@ export async function POST(req: Request) {
       tnOrderId: Number(tnOrderId), // mantenemos numérico como venías usando
       mp: mpForGas,
       force: force === true,
+      ...(idRemitoProvided ? { idRemito: idRemitoProvided } : {}),
       _meta: {
         build: BUILD_MARK,
         correlationId,

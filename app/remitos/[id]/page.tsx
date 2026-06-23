@@ -5,7 +5,14 @@ import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
-import { Loader2, ArrowLeft, CheckCircle2, XCircle, Pencil } from "lucide-react";
+import {
+  Loader2,
+  ArrowLeft,
+  CheckCircle2,
+  XCircle,
+  Pencil,
+  LayoutDashboard,
+} from "lucide-react";
 
 const WEBHOOK = "/api/remitos";
 
@@ -160,7 +167,7 @@ export default function RemitoDetallePage() {
     <main className="max-w-6xl mx-auto p-6 space-y-6">
       {/* HEADER */}
       <div className="flex items-center justify-between gap-4 flex-wrap">
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 flex-wrap">
           <Button
             variant="outline"
             size="sm"
@@ -170,6 +177,12 @@ export default function RemitoDetallePage() {
             <ArrowLeft className="w-4 h-4" />
             Volver
           </Button>
+          <Link href="/dashboard/remitos">
+            <Button variant="outline" size="sm" className="gap-1">
+              <LayoutDashboard className="w-4 h-4" />
+              Volver al ERP
+            </Button>
+          </Link>
           <h1 className="text-2xl font-semibold">
             Remito <span className="font-mono">#{remito.id}</span>
           </h1>
