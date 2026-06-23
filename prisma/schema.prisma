@@ -85,6 +85,12 @@ enum StockMovementDirection {
   adjust
 }
 
+/// Origen de un Financial Item — M6.1
+enum FinancialItemOriginType {
+  TN_ORDER
+  REMITO
+}
+
 // ─── A) Fuente Tiendanube (universo ventas / facturación KPI) ───────────────
 
 /// Orden ecommerce TN — entidad principal ventas/facturación (M1 TN-first)
@@ -530,4 +536,46 @@ model PipelineRun {
   @@index([startedAt])
   @@index([status])
   @@map("pipeline_runs")
+}
+
+// ─── M6 — Financial Items (fuente financiera unificada) ───────────────────────
+
+/// Unidad financiera — 1 prenda vendida = 1 fila (M6.1 TN generator)
+model FinancialItem {
+  id                 String                  @id @default(cuid())
+  originType         FinancialItemOriginType @map("origin_type")
+  originId           String                  @map("origin_id")
+  originItemId       String                  @map("origin_item_id")
+  unitKey            String                  @map("unit_key")
+
+  date               DateTime                @map("date")
+  customerName       String?                 @map("customer_name")
+  sku                String
+  productName        String                  @map("product_name")
+  variantName        String?                 @map("variant_name")
+  quantity           Int                     @default(1)
+
+  grossAmount        Decimal                 @default(0) @map("gross_amount") @db.Decimal(14, 2)
+  discountAllocated  Decimal                 @default(0) @map("discount_allocated") @db.Decimal(14, 2)
+  tnFeeAllocated     Decimal                 @default(0) @map("tn_fee_allocated") @db.Decimal(14, 2)
+  mpFeeAllocated     Decimal                 @default(0) @map("mp_fee_allocated") @db.Decimal(14, 2)
+  shippingAllocated  Decimal                 @default(0) @map("shipping_allocated") @db.Decimal(14, 2)
+  metaAdsAllocated   Decimal?                @map("meta_ads_allocated") @db.Decimal(14, 2)
+
+  netAmount          Decimal                 @default(0) @map("net_amount") @db.Decimal(14, 2)
+
+  paymentMethod      String?                 @map("payment_method")
+  status             String
+  sourceCreatedAt    DateTime?               @map("source_created_at")
+
+  generatorVersion   String                  @default("m6.1-tn-v1") @map("generator_version")
+  createdAt          DateTime                @default(now()) @map("created_at")
+  updatedAt          DateTime                @updatedAt @map("updated_at")
+
+  @@unique([originType, unitKey])
+  @@index([date])
+  @@index([sku])
+  @@index([status])
+  @@index([originId])
+  @@map("financial_items")
 }

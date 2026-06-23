@@ -80,6 +80,13 @@ export const ERP_NAV_SECTIONS: ErpNavSection[] = [
     title: "Finanzas",
     items: [
       {
+        id: "financial-items",
+        label: "Financial Items",
+        href: "/dashboard/financial-items",
+        icon: "layers",
+        badge: "M6",
+      },
+      {
         id: "mercadopago",
         label: "Mercado Pago",
         href: "/dashboard/mercado-pago",
