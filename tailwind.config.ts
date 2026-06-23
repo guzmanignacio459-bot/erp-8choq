@@ -1,5 +1,10 @@
 import type { Config } from "tailwindcss";
 
+import { erpThemeExtend } from "./lib/design-system/erp-tokens.tailwind";
+
+const { colors: erpColors, borderRadius: erpRadius, ...erpRest } =
+  erpThemeExtend;
+
 export default {
     darkMode: ["class"],
     content: [
@@ -10,12 +15,15 @@ export default {
   ],
   theme: {
   	extend: {
+  		...erpRest,
   		borderRadius: {
+  			...erpRadius,
   			lg: 'var(--radius)',
   			md: 'calc(var(--radius) - 2px)',
   			sm: 'calc(var(--radius) - 4px)'
   		},
   		colors: {
+  			...erpColors,
   			background: 'hsl(var(--background))',
   			foreground: 'hsl(var(--foreground))',
   			card: {

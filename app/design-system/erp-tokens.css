@@ -1,0 +1,69 @@
+/**
+ * ERP 8Q Enterprise — CSS Variables UI.0 / UI.1
+ * Canonical source — import before dashboard.css
+ */
+
+.erp-shell {
+  /* ── Surfaces ── */
+  --erp-bg: 240 10% 3%;
+  --erp-bg-elevated: 240 8% 6%;
+  --erp-bg-card: 240 7% 9%;
+  --erp-bg-hover: 240 6% 12%;
+  --erp-border: 240 4% 24%;
+  --erp-border-subtle: 240 5% 18%;
+
+  /* ── Text ── */
+  --erp-fg: 240 10% 90%;
+  --erp-fg-muted: 240 4% 55%;
+  --erp-fg-subtle: 240 3% 40%;
+
+  /* ── Brand 8Q #F97316 ── */
+  --erp-accent: 24 95% 53%;
+  --erp-accent-dim: 21 90% 48%;
+  --erp-accent-muted: 30 97% 72%;
+  --erp-ring: 24 95% 53%;
+
+  /* ── Semantic ── */
+  --erp-success: 152 69% 48%;
+  --erp-warning: 38 92% 50%;
+  --erp-danger: 0 72% 51%;
+  --erp-info: 199 89% 48%;
+  --erp-finance: 217 91% 60%;
+  --erp-scnl: 280 65% 60%;
+
+  /* Legacy aliases (pantallas pre-UI.1) */
+  --erp-emerald: var(--erp-success);
+  --erp-cyan: var(--erp-info);
+
+  /* ── Layout ── */
+  --erp-sidebar-w: 260px;
+  --erp-sidebar-w-collapsed: 72px;
+  --erp-topbar-h: 64px;
+
+  /* ── Radius ── */
+  --erp-radius-sm: 6px;
+  --erp-radius-md: 8px;
+  --erp-radius-lg: 12px;
+  --erp-radius-xl: 16px;
+
+  /* ── Charts ── */
+  --chart-1: 24 95% 53%;
+  --chart-2: 217 91% 60%;
+  --chart-3: 152 69% 48%;
+  --chart-4: 240 4% 55%;
+  --chart-5: 280 65% 60%;
+
+  min-height: 100vh;
+  font-family: var(--font-geist-sans), Inter, system-ui, sans-serif;
+  background:
+    radial-gradient(ellipse 70% 45% at 50% -15%, hsl(24 60% 12% / 0.22), transparent),
+    radial-gradient(ellipse 50% 30% at 100% 0%, hsl(240 20% 8% / 0.5), transparent),
+    hsl(var(--erp-bg));
+  color: hsl(var(--erp-fg));
+  font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+}
+
+.erp-shell ::selection {
+  background: hsl(var(--erp-accent) / 0.35);
+  color: hsl(var(--erp-fg));
+}
