@@ -87,6 +87,13 @@ export const ERP_NAV_SECTIONS: ErpNavSection[] = [
         badge: "M6",
       },
       {
+        id: "financial-accounts",
+        label: "Financial Accounts",
+        href: "/dashboard/financial-accounts",
+        icon: "wallet",
+        badge: "M6.4",
+      },
+      {
         id: "mercadopago",
         label: "Mercado Pago",
         href: "/dashboard/mercado-pago",

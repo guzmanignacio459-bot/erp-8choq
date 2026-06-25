@@ -18,6 +18,7 @@ import {
   ShoppingBag,
   TrendingUp,
   Users,
+  Wallet,
   X,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
@@ -40,6 +41,7 @@ const ICON_MAP: Record<string, LucideIcon> = {
   "credit-card": CreditCard,
   download: Download,
   users: Users,
+  wallet: Wallet,
   settings: Settings,
 };
 

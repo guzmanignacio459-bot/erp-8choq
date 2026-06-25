@@ -579,3 +579,20 @@ model FinancialItem {
   @@index([originId])
   @@map("financial_items")
 }
+
+// ─── M6.4 — Financial Accounts (catálogo de cuentas financieras) ─────────────
+
+model FinancialAccount {
+  id          String   @id @default(cuid())
+  name        String
+  ratePercent Decimal  @default(0) @map("rate_percent") @db.Decimal(5, 2)
+  color       String   @default("#6366f1")
+  isActive    Boolean  @default(true) @map("is_active")
+  isDefault   Boolean  @default(false) @map("is_default")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@index([isActive])
+  @@index([isDefault])
+  @@map("financial_accounts")
+}
