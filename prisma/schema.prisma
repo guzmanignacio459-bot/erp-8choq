@@ -560,6 +560,7 @@ model FinancialItem {
   tnFeeAllocated     Decimal                 @default(0) @map("tn_fee_allocated") @db.Decimal(14, 2)
   mpFeeAllocated     Decimal                 @default(0) @map("mp_fee_allocated") @db.Decimal(14, 2)
   shippingAllocated  Decimal                 @default(0) @map("shipping_allocated") @db.Decimal(14, 2)
+  transferFeeAllocated Decimal               @default(0) @map("transfer_fee_allocated") @db.Decimal(14, 2)
   metaAdsAllocated   Decimal?                @map("meta_ads_allocated") @db.Decimal(14, 2)
 
   netAmount          Decimal                 @default(0) @map("net_amount") @db.Decimal(14, 2)

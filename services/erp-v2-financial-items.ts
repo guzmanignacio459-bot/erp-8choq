@@ -45,6 +45,7 @@ function mapRow(row: FinancialItem): V2FinancialItemRow {
     tnFeeAllocated: Number(row.tnFeeAllocated),
     mpFeeAllocated: Number(row.mpFeeAllocated),
     shippingAllocated: Number(row.shippingAllocated),
+    transferFeeAllocated: Number(row.transferFeeAllocated),
     metaAdsAllocated:
       row.metaAdsAllocated != null ? Number(row.metaAdsAllocated) : null,
     netAmount: Number(row.netAmount),
@@ -118,6 +119,7 @@ export async function fetchV2FinancialItems(
           tnFeeAllocated: true,
           mpFeeAllocated: true,
           shippingAllocated: true,
+          transferFeeAllocated: true,
           netAmount: true,
         },
         _count: { id: true },
@@ -131,6 +133,7 @@ export async function fetchV2FinancialItems(
       tnFeeTotal: Number(agg._sum.tnFeeAllocated ?? 0),
       mpFeeTotal: Number(agg._sum.mpFeeAllocated ?? 0),
       shippingTotal: Number(agg._sum.shippingAllocated ?? 0),
+      transferFeeTotal: Number(agg._sum.transferFeeAllocated ?? 0),
       netTotal: Number(agg._sum.netAmount ?? 0),
     };
 

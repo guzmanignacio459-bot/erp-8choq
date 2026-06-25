@@ -5,9 +5,11 @@
 import { randomUUID } from "crypto";
 
 import { validateInventoryProjection } from "@/lib/erp/v2/validate-inventory-projection";
+import { collectFiOrderIdsFromCommercialResults } from "@/lib/erp/v2/collect-fi-order-ids";
 import { runPostT0CommercialAllocationLive } from "@/services/erp-v2-allocations-commercial-live";
 import { runPostT0MpAllocationLive } from "@/services/erp-v2-allocations-mp-live";
 import { runFinancialItemsSyncForOrders } from "@/services/erp-v2-financial-items-sync-live";
+import { runTransferFeeSyncForOrders } from "@/services/financial-items/apply-transfer-fee";
 import { runIncrementalLiveImport } from "@/services/erp-v2-live-import";
 import { loadProjectionValidationInputs } from "@/services/erp-v2-inventory-projection";
 import { runPostT0PaymentSyncLive } from "@/services/erp-v2-payments-sync-live";
@@ -192,6 +194,8 @@ export async function runLivePipeline(opts?: {
   });
 
   if (!reportOnly) {
+    const fiOrderIds = new Set<string>();
+
     // Stage 1 — Import
     {
       const { result, durationMs, startedAt, finishedAt } = await timed(() =>
@@ -279,6 +283,11 @@ export async function runLivePipeline(opts?: {
         validationChecks: result.stats.validationChecks,
         errors: result.errors,
       };
+      for (const tnOrderId of collectFiOrderIdsFromCommercialResults(
+        result.orderResults
+      )) {
+        fiOrderIds.add(tnOrderId);
+      }
       if (status === "failed") {
         failedStage = "commercial";
         errors.push(...result.errors);
@@ -287,7 +296,6 @@ export async function runLivePipeline(opts?: {
     }
 
     // Stage 4 — Payment sync (M6.3.3)
-    const fiOrderIds = new Set<string>();
     if (!stop) {
       const { result, durationMs, startedAt, finishedAt } = await timed(() =>
         runPostT0PaymentSyncLive({ dryRun })
@@ -382,6 +390,15 @@ export async function runLivePipeline(opts?: {
         failedStage = "financial_items";
         errors.push(...result.errors);
         stop = true;
+      } else if (!dryRun && orderIds.length > 0) {
+        const tfResult = await runTransferFeeSyncForOrders(orderIds, {
+          dryRun: false,
+        });
+        if (tfResult.errors.length > 0) {
+          warnings.push(
+            `transfer_fee: ${tfResult.errors.length} order errors`
+          );
+        }
       }
     }
 

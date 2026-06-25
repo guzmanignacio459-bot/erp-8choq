@@ -21,6 +21,7 @@ export type V2FinancialItemRow = {
   tnFeeAllocated: number;
   mpFeeAllocated: number;
   shippingAllocated: number;
+  transferFeeAllocated: number;
   metaAdsAllocated: number | null;
   netAmount: number;
   paymentMethod: string | null;
@@ -37,6 +38,7 @@ export type V2FinancialItemsKpi = {
   tnFeeTotal: number;
   mpFeeTotal: number;
   shippingTotal: number;
+  transferFeeTotal: number;
   netTotal: number;
 };
 

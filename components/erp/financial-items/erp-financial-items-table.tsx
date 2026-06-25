@@ -29,6 +29,7 @@ export function ErpFinancialItemsTable({ items }: Props) {
             <th className="px-3 py-2 text-right">Fee TN</th>
             <th className="px-3 py-2 text-right">Fee MP</th>
             <th className="px-3 py-2 text-right">Shipping</th>
+            <th className="px-3 py-2 text-right">Transfer Fee</th>
             <th className="px-3 py-2 text-right">Net Real</th>
           </tr>
         </thead>
@@ -58,6 +59,9 @@ export function ErpFinancialItemsTable({ items }: Props) {
               </td>
               <td className="px-3 py-2 text-right tabular-nums">
                 {formatRemitosCurrency(row.shippingAllocated)}
+              </td>
+              <td className="px-3 py-2 text-right tabular-nums">
+                {formatRemitosCurrency(row.transferFeeAllocated)}
               </td>
               <td className="px-3 py-2 text-right tabular-nums font-medium">
                 {formatRemitosCurrency(row.netAmount)}
