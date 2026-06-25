@@ -7,6 +7,10 @@ import {
   getPaymentsPendingSnapshot,
   PAYMENTS_PENDING_FAIL_HOURS,
 } from "@/lib/erp/v2/payments-pending-health";
+import {
+  getTransferAssignmentsPendingSnapshot,
+  TRANSFER_ASSIGNMENTS_FAIL_HOURS,
+} from "@/lib/erp/v2/transfer-assignments-pending-health";
 import { getPrisma } from "@/lib/db/prisma";
 import { loadProjectionValidationInputs } from "@/services/erp-v2-inventory-projection";
 import { loadActiveSnapshotDate } from "@/services/erp-v2-stock-ledger";
@@ -26,6 +30,7 @@ import type {
   PipelineHealthCheck,
   PipelineKpis,
   PipelineRunSummary,
+  TransferAssignmentsPendingSummary,
 } from "@/types/erp-v2-pipeline-health";
 
 const MP_TOLERANCE = 0.02;
@@ -38,7 +43,8 @@ function classifyOverall(checks: Record<DriftCheckId, DriftCheckResult>): Health
         !c.pass &&
         (c.id === "projection" ||
           c.id === "pipeline_stale" ||
-          c.id === "payments_pending")
+          c.id === "payments_pending" ||
+          c.id === "transfer_assignments_pending")
     )
   ) {
     return "FAIL";
@@ -230,19 +236,47 @@ async function checkPaymentsPendingDrift(): Promise<DriftCheckResult> {
   };
 }
 
+async function checkTransferAssignmentsPendingDrift(): Promise<DriftCheckResult> {
+  const snap = await getTransferAssignmentsPendingSnapshot();
+  const pass = snap.status === "PASS";
+
+  return {
+    id: "transfer_assignments_pending",
+    pass,
+    message: snap.message,
+    details: {
+      count: snap.count,
+      status: snap.status,
+      oldestOrderId: snap.oldestOrderId,
+      oldestPaidAt: snap.oldestPaidAt,
+      lagHours: snap.lagHours,
+      failThresholdHours: TRANSFER_ASSIGNMENTS_FAIL_HOURS,
+    },
+  };
+}
+
 export async function runPipelineHealthCheck(): Promise<PipelineHealthCheck> {
   const snapshotDate = await loadActiveSnapshotDate();
 
-  const [projection, units, commercial, stock, mp, payments_pending, pipelineStale] =
-    await Promise.all([
-      checkProjectionDrift(),
-      checkUnitsDrift(snapshotDate),
-      checkCommercialDrift(snapshotDate),
-      checkStockDrift(snapshotDate),
-      checkMpDrift(snapshotDate),
-      checkPaymentsPendingDrift(),
-      checkPipelineStaleDrift(),
-    ]);
+  const [
+    projection,
+    units,
+    commercial,
+    stock,
+    mp,
+    payments_pending,
+    transfer_assignments_pending,
+    pipelineStale,
+  ] = await Promise.all([
+    checkProjectionDrift(),
+    checkUnitsDrift(snapshotDate),
+    checkCommercialDrift(snapshotDate),
+    checkStockDrift(snapshotDate),
+    checkMpDrift(snapshotDate),
+    checkPaymentsPendingDrift(),
+    checkTransferAssignmentsPendingDrift(),
+    checkPipelineStaleDrift(),
+  ]);
 
   const checks = {
     projection,
@@ -251,6 +285,7 @@ export async function runPipelineHealthCheck(): Promise<PipelineHealthCheck> {
     stock,
     mp,
     payments_pending,
+    transfer_assignments_pending,
     pipeline_stale: pipelineStale,
   };
   const overall = classifyOverall(checks);
@@ -389,10 +424,12 @@ export async function getPipelineSystemHealth(): Promise<{
   healthCheck: PipelineHealthCheck | null;
   pipelineStale: PipelineStaleStatus | null;
   paymentsPending: PaymentsPendingSummary | null;
+  transferAssignmentsPending: TransferAssignmentsPendingSummary | null;
 }> {
   const prisma = getPrisma();
 
-  const [latest, recent, kpis24h, healthCheck, paymentsSnap] = await Promise.all([
+  const [latest, recent, kpis24h, healthCheck, paymentsSnap, transferSnap] =
+    await Promise.all([
     prisma.pipelineRun.findFirst({
       where: { status: { in: ["success", "failed"] } },
       orderBy: { startedAt: "desc" },
@@ -404,6 +441,7 @@ export async function getPipelineSystemHealth(): Promise<{
     getPipelineKpis(24),
     runPipelineHealthCheck(),
     getPaymentsPendingSnapshot(),
+    getTransferAssignmentsPendingSnapshot(),
   ]);
 
   const staleCheck = healthCheck.checks.pipeline_stale;
@@ -418,6 +456,16 @@ export async function getPipelineSystemHealth(): Promise<{
     message: paymentsSnap.message,
   };
 
+  const transferAssignmentsPending: TransferAssignmentsPendingSummary = {
+    count: transferSnap.count,
+    status: transferSnap.status,
+    oldestOrderId: transferSnap.oldestOrderId,
+    oldestPaidAt: transferSnap.oldestPaidAt,
+    lagHours: transferSnap.lagHours,
+    failThresholdHours: TRANSFER_ASSIGNMENTS_FAIL_HOURS,
+    message: transferSnap.message,
+  };
+
   return {
     latestRun: latest ? toPipelineRunSummary(latest) : null,
     kpis24h,
@@ -425,6 +473,7 @@ export async function getPipelineSystemHealth(): Promise<{
     healthCheck,
     pipelineStale: staleCheck ? toPipelineStaleSummary(staleCheck) : null,
     paymentsPending,
+    transferAssignmentsPending,
   };
 }
 

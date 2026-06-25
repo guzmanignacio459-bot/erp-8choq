@@ -114,6 +114,7 @@ export function ErpSystemDashboard() {
   const health = data?.healthCheck;
   const pipelineStale = data?.pipelineStale;
   const paymentsPending = data?.paymentsPending;
+  const transferAssignmentsPending = data?.transferAssignmentsPending;
 
   return (
     <div className="mx-auto max-w-7xl space-y-6 p-4 sm:p-6">
@@ -150,6 +151,22 @@ export function ErpSystemDashboard() {
         <div className="erp-card flex items-start gap-3 border-[hsl(var(--erp-rose)/0.35)] p-4 text-sm text-[hsl(var(--erp-rose))]">
           <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
           <p>{error}</p>
+        </div>
+      )}
+
+      {transferAssignmentsPending && transferAssignmentsPending.status === "FAIL" && (
+        <div className="erp-card flex items-start gap-3 border-[hsl(var(--erp-rose)/0.45)] bg-[hsl(var(--erp-rose)/0.06)] p-4 text-sm text-[hsl(var(--erp-rose))]">
+          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+          <div>
+            <p className="font-medium">Transfer Assignments Pending</p>
+            <p className="mt-1 text-[hsl(var(--erp-fg-muted))]">
+              {transferAssignmentsPending.count} transferencias TN sin cuenta financiera.
+              Más antigua: {transferAssignmentsPending.oldestOrderId ?? "—"}
+              {transferAssignmentsPending.lagHours != null
+                ? ` (${transferAssignmentsPending.lagHours}h atraso, umbral ${transferAssignmentsPending.failThresholdHours}h)`
+                : ""}
+            </p>
+          </div>
         </div>
       )}
 
@@ -280,6 +297,15 @@ export function ErpSystemDashboard() {
               sub={
                 paymentsPending
                   ? `${paymentsPending.status}${paymentsPending.lagHours != null ? ` · ${paymentsPending.lagHours}h` : ""}`
+                  : undefined
+              }
+            />
+            <KpiCard
+              label="Transfer Assignments"
+              value={transferAssignmentsPending?.count ?? "—"}
+              sub={
+                transferAssignmentsPending
+                  ? `${transferAssignmentsPending.status}${transferAssignmentsPending.lagHours != null ? ` · ${transferAssignmentsPending.lagHours}h` : ""}`
                   : undefined
               }
             />

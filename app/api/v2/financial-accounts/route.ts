@@ -2,19 +2,23 @@ import { NextResponse } from "next/server";
 
 import { checkErpV2DbRead, checkErpV2DbWrite } from "@/lib/db/assert-staging";
 import {
+  fetchRecentAssignments,
+  fetchTransferAssignmentKpi,
+} from "@/services/erp-v2-financial-account-assignments";
+import {
   createV2FinancialAccount,
   fetchV2FinancialAccounts,
 } from "@/services/erp-v2-financial-accounts";
+import type { V2FinancialAccountsDashboardResponse } from "@/types/erp-v2-financial-account-assignments";
 import type {
   V2FinancialAccountCreateInput,
-  V2FinancialAccountsListResponse,
   V2FinancialAccountMutationResponse,
 } from "@/types/erp-v2-financial-accounts";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-function listJson(body: V2FinancialAccountsListResponse, status = 200): NextResponse {
+function listJson(body: V2FinancialAccountsDashboardResponse, status = 200): NextResponse {
   return NextResponse.json(body, {
     status,
     headers: {
@@ -52,6 +56,8 @@ export async function GET(req: Request) {
         data: [],
         count: 0,
         kpi: null,
+        assignments: null,
+        recentAssignments: [],
         fetchedAt,
         source: "neon-staging",
         error: gate.message,
@@ -62,7 +68,11 @@ export async function GET(req: Request) {
 
   const { searchParams } = new URL(req.url);
   const activeOnly = searchParams.get("activeOnly") === "true";
-  const result = await fetchV2FinancialAccounts({ activeOnly });
+  const [result, assignments, recentAssignments] = await Promise.all([
+    fetchV2FinancialAccounts({ activeOnly }),
+    fetchTransferAssignmentKpi(),
+    fetchRecentAssignments(20),
+  ]);
 
   if (!result.ok) {
     return listJson(
@@ -71,6 +81,8 @@ export async function GET(req: Request) {
         data: [],
         count: 0,
         kpi: null,
+        assignments: null,
+        recentAssignments: [],
         fetchedAt,
         source: "neon-staging",
         error: result.error,
@@ -84,6 +96,8 @@ export async function GET(req: Request) {
     data: result.data,
     count: result.count,
     kpi: result.kpi,
+    assignments,
+    recentAssignments,
     fetchedAt,
     source: "neon-staging",
   });

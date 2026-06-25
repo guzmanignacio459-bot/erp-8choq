@@ -45,6 +45,7 @@ export async function GET() {
         healthCheck: null,
         pipelineStale: null,
         paymentsPending: null,
+        transferAssignmentsPending: null,
         error: gate.message,
       },
       gate.status
@@ -80,6 +81,7 @@ export async function GET() {
         healthCheck: null,
         pipelineStale: null,
         paymentsPending: null,
+        transferAssignmentsPending: null,
         error: message,
       },
       500

@@ -3,9 +3,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Plus, RefreshCw, Wallet } from "lucide-react";
 
+import { ErpFinancialAccountsAssignmentKpiGrid } from "@/components/erp/financial-accounts/erp-financial-accounts-assignment-kpi-grid";
 import { ErpFinancialAccountFormDialog } from "@/components/erp/financial-accounts/erp-financial-account-form-dialog";
 import { ErpFinancialAccountsBalanceChart } from "@/components/erp/financial-accounts/erp-financial-accounts-balance-chart";
 import { ErpFinancialAccountsKpiGrid } from "@/components/erp/financial-accounts/erp-financial-accounts-kpi-grid";
+import { ErpFinancialAccountsRecentAssignmentsTable } from "@/components/erp/financial-accounts/erp-financial-accounts-recent-assignments-table";
 import { ErpFinancialAccountsTable } from "@/components/erp/financial-accounts/erp-financial-accounts-table";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -15,13 +17,19 @@ import type {
   V2FinancialAccountRow,
   V2FinancialAccountUpdateInput,
   V2FinancialAccountsKpi,
-  V2FinancialAccountsListResponse,
 } from "@/types/erp-v2-financial-accounts";
+import type {
+  V2FinancialAccountAssignmentRow,
+  V2FinancialAccountsDashboardResponse,
+  V2TransferAssignmentKpi,
+} from "@/types/erp-v2-financial-account-assignments";
 
 export function ErpFinancialAccountsDashboard() {
   const fetchGuardRef = useRef(createFetchGuard());
   const [accounts, setAccounts] = useState<V2FinancialAccountRow[]>([]);
   const [kpi, setKpi] = useState<V2FinancialAccountsKpi | null>(null);
+  const [assignmentKpi, setAssignmentKpi] = useState<V2TransferAssignmentKpi | null>(null);
+  const [recentAssignments, setRecentAssignments] = useState<V2FinancialAccountAssignmentRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [fetchedAt, setFetchedAt] = useState<string | null>(null);
@@ -41,7 +49,7 @@ export function ErpFinancialAccountsDashboard() {
         cache: "no-store",
         signal,
       });
-      const json = (await res.json()) as V2FinancialAccountsListResponse;
+      const json = (await res.json()) as V2FinancialAccountsDashboardResponse;
 
       if (!guard.isCurrent(reqId)) return;
 
@@ -50,6 +58,8 @@ export function ErpFinancialAccountsDashboard() {
       }
       setAccounts(json.data ?? []);
       setKpi(json.kpi ?? null);
+      setAssignmentKpi(json.assignments ?? null);
+      setRecentAssignments(json.recentAssignments ?? []);
       setFetchedAt(json.fetchedAt ?? null);
     } catch (err: unknown) {
       if (isAbortError(err)) return;
@@ -57,6 +67,8 @@ export function ErpFinancialAccountsDashboard() {
       setError(err instanceof Error ? err.message : String(err));
       setAccounts([]);
       setKpi(null);
+      setAssignmentKpi(null);
+      setRecentAssignments([]);
     } finally {
       if (guard.isCurrent(reqId)) setLoading(false);
     }
@@ -140,7 +152,7 @@ export function ErpFinancialAccountsDashboard() {
               Financial Accounts
             </h1>
             <span className="rounded bg-[hsl(var(--erp-accent-violet)/0.12)] px-2 py-0.5 text-[11px] font-medium text-[hsl(var(--erp-accent-violet))]">
-              M6.4
+              M6.5.1
             </span>
           </div>
           <p className="mt-1 text-sm text-[hsl(var(--erp-fg-muted))]">
@@ -194,6 +206,9 @@ export function ErpFinancialAccountsDashboard() {
         </TabsContent>
 
         <TabsContent value="dashboard" className="space-y-4">
+          {assignmentKpi && (
+            <ErpFinancialAccountsAssignmentKpiGrid kpi={assignmentKpi} />
+          )}
           {kpi && <ErpFinancialAccountsKpiGrid kpi={kpi} />}
           <div className="erp-card">
             {loading ? (
@@ -203,6 +218,12 @@ export function ErpFinancialAccountsDashboard() {
             ) : (
               <ErpFinancialAccountsBalanceChart accounts={accounts} />
             )}
+          </div>
+          <div className="erp-card">
+            <h3 className="mb-3 text-sm font-semibold text-[hsl(var(--erp-fg))]">
+              Últimas asignaciones
+            </h3>
+            <ErpFinancialAccountsRecentAssignmentsTable rows={recentAssignments} />
           </div>
         </TabsContent>
       </Tabs>
