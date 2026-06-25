@@ -1,48 +1,19 @@
 /**
- * M6.1 — Generator TN → Financial Items
+ * M6.2 — Generator TN → Financial Items
  *
  * 1 tn_order_item_unit + allocation → 1 financial_item (idempotent upsert).
- * No recalcula prorrateos — copia campos de tn_order_item_allocations.
+ * Copia mp/tn/shipping desde tn_order_item_allocations (prorrateo M5 por bruto).
+ * netAmount = net_real (gross − discount − mp − tn − shipping).
  */
 
 import type { Prisma } from "@prisma/client";
 
+import { amountsFromAllocation } from "@/lib/financial-items/resolve-unit-amounts";
 import { getPrisma } from "@/lib/db/prisma";
 import type { GenerateFromTnResult } from "@/types/erp-v2-financial-items";
 
-const GENERATOR_VERSION = "m6.1-tn-v1";
+const GENERATOR_VERSION = "m6.2-tn-v1";
 const ORIGIN_TYPE = "TN_ORDER" as const;
-
-function toNum(value: Prisma.Decimal | null | undefined): number {
-  if (value == null) return 0;
-  return Number(value);
-}
-
-function pickNetAmount(alloc: {
-  netoPrendaReal: Prisma.Decimal | null;
-  netoPrenda: Prisma.Decimal;
-}): number {
-  if (alloc.netoPrendaReal != null) return Number(alloc.netoPrendaReal);
-  return Number(alloc.netoPrenda);
-}
-
-function pickMpFeeAllocated(alloc: {
-  mpTotalCostAllocatedReal: Prisma.Decimal | null;
-  mpFeeAllocatedReal: Prisma.Decimal | null;
-  mpTaxAllocatedReal: Prisma.Decimal | null;
-  mpFinancingAllocatedReal: Prisma.Decimal | null;
-  mpPlatformFeeAllocatedReal: Prisma.Decimal | null;
-}): number {
-  if (alloc.mpTotalCostAllocatedReal != null) {
-    return Number(alloc.mpTotalCostAllocatedReal);
-  }
-  return (
-    toNum(alloc.mpFeeAllocatedReal) +
-    toNum(alloc.mpTaxAllocatedReal) +
-    toNum(alloc.mpFinancingAllocatedReal) +
-    toNum(alloc.mpPlatformFeeAllocatedReal)
-  );
-}
 
 function buildUnitKey(unitId: string): string {
   return `tn:${unitId}`;
@@ -111,7 +82,7 @@ export async function generateFinancialItemsFromTn(
         continue;
       }
 
-      const alloc = unit.allocation;
+      const amounts = amountsFromAllocation(unit.allocation);
       const item = unit.tnOrderItem;
       const order = unit.tnOrder;
       const unitKey = buildUnitKey(unit.id);
@@ -127,13 +98,13 @@ export async function generateFinancialItemsFromTn(
         productName: item.productName ?? "",
         variantName: unit.talle ?? item.variantName,
         quantity: 1,
-        grossAmount: toNum(alloc.grossUnitAmount),
-        discountAllocated: toNum(alloc.discountAllocated),
-        tnFeeAllocated: toNum(alloc.feeAllocated),
-        mpFeeAllocated: pickMpFeeAllocated(alloc),
-        shippingAllocated: toNum(alloc.shippingAllocated),
+        grossAmount: amounts.grossAmount,
+        discountAllocated: amounts.discountAllocated,
+        tnFeeAllocated: amounts.tnFeeAllocated,
+        mpFeeAllocated: amounts.mpFeeAllocated,
+        shippingAllocated: amounts.shippingAllocated,
         metaAdsAllocated: null as number | null,
-        netAmount: pickNetAmount(alloc),
+        netAmount: amounts.netAmount,
         paymentMethod: order.paymentMethod,
         status: resolveStatus(order),
         sourceCreatedAt: order.tnCreatedAt,
@@ -187,4 +158,35 @@ export async function generateFinancialItemsFromTn(
     dryRun,
     nextCursor: cursor,
   };
+}
+
+/** Elimina financial_items TN sin allocation upstream (post M6.2 cleanup). */
+export async function purgeOrphanTnFinancialItems(dryRun = false): Promise<number> {
+  const prisma = getPrisma();
+  if (dryRun) {
+    const rows = await prisma.$queryRaw<[{ count: bigint }]>`
+      SELECT COUNT(*)::bigint AS count
+      FROM financial_items fi
+      WHERE fi.origin_type = 'TN_ORDER'::"FinancialItemOriginType"
+        AND NOT EXISTS (
+          SELECT 1
+          FROM tn_order_item_units u
+          INNER JOIN tn_order_item_allocations a ON a.tn_order_item_unit_id = u.id
+          WHERE fi.unit_key = 'tn:' || u.id
+        )
+    `;
+    return Number(rows[0]?.count ?? 0);
+  }
+
+  const deleted = await prisma.$executeRaw`
+    DELETE FROM financial_items fi
+    WHERE fi.origin_type = 'TN_ORDER'::"FinancialItemOriginType"
+      AND NOT EXISTS (
+        SELECT 1
+        FROM tn_order_item_units u
+        INNER JOIN tn_order_item_allocations a ON a.tn_order_item_unit_id = u.id
+        WHERE fi.unit_key = 'tn:' || u.id
+      )
+  `;
+  return deleted;
 }

@@ -1,5 +1,5 @@
 /**
- * M6.1 — Backfill Financial Items from TN units + allocations
+ * M6.2 — Backfill Financial Items from TN units + allocations
  *
  * Dry-run:
  *   npm run m6:financial-items:backfill
@@ -10,7 +10,10 @@
 import fs from "fs";
 import path from "path";
 
-import { generateFinancialItemsFromTn } from "../services/financial-items/generate-from-tn";
+import {
+  generateFinancialItemsFromTn,
+  purgeOrphanTnFinancialItems,
+} from "../services/financial-items/generate-from-tn";
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { loadEnvLocal } = require("./lib/l0-env.mjs");
@@ -50,9 +53,10 @@ async function main() {
       skippedNoAllocation: 0,
       errors: 0,
       batches: 0,
+      orphansPurged: 0,
     };
 
-    console.log(`[M6.1] backfill start dryRun=${!write}`);
+    console.log(`[M6.2] backfill start dryRun=${!write}`);
 
     for (;;) {
       const batch = await generateFinancialItemsFromTn({
@@ -70,7 +74,7 @@ async function main() {
       totals.errors += batch.errors;
       totals.batches++;
 
-      console.log(`[M6.1] batch ${totals.batches}`, {
+      console.log(`[M6.2] batch ${totals.batches}`, {
         processed: batch.processed,
         created: batch.created,
         updated: batch.updated,
@@ -83,6 +87,11 @@ async function main() {
       cursor = batch.nextCursor;
     }
 
+    if (write) {
+      totals.orphansPurged = await purgeOrphanTnFinancialItems(false);
+      console.log(`[M6.2] orphans purged: ${totals.orphansPurged}`);
+    }
+
     const report = {
       generatedAt: new Date().toISOString(),
       dryRun: !write,
@@ -93,8 +102,8 @@ async function main() {
     fs.mkdirSync(WIP, { recursive: true });
     fs.writeFileSync(REPORT_PATH, JSON.stringify(report, null, 2));
 
-    console.log("[M6.1] backfill done", report);
-    console.log(`[M6.1] report → ${REPORT_PATH}`);
+    console.log("[M6.2] backfill done", report);
+    console.log(`[M6.2] report → ${REPORT_PATH}`);
 
     if (totals.errors > 0) process.exitCode = 1;
   } finally {
@@ -103,6 +112,6 @@ async function main() {
 }
 
 main().catch((err) => {
-  console.error("[M6.1] fatal:", err);
+  console.error("[M6.2] fatal:", err);
   process.exit(1);
 });

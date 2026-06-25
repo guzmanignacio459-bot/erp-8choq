@@ -1,4 +1,4 @@
-import { DollarSign, Layers, Percent, Receipt, TrendingDown } from "lucide-react";
+import { DollarSign, Layers, Percent, Receipt, TrendingDown, Truck } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
 import {
@@ -63,7 +63,13 @@ export function ErpFinancialItemsKpiGrid({ kpi, periodLabel }: Props) {
       accent: "amber",
     },
     {
-      label: "Neto",
+      label: "Shipping",
+      value: formatRemitosCurrency(kpi.shippingTotal),
+      icon: Truck,
+      accent: "cyan",
+    },
+    {
+      label: "Net Real",
       value: formatRemitosCurrency(kpi.netTotal),
       icon: DollarSign,
       accent: "emerald",
@@ -71,7 +77,7 @@ export function ErpFinancialItemsKpiGrid({ kpi, periodLabel }: Props) {
   ];
 
   return (
-    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
+    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-7">
       {cards.map((card) => (
         <div key={card.label} className={cn("erp-kpi-card", ACCENT[card.accent])}>
           <div className="flex items-start justify-between gap-2">
