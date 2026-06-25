@@ -3,6 +3,10 @@
  */
 
 import { validateInventoryProjection } from "@/lib/erp/v2/validate-inventory-projection";
+import {
+  getPaymentsPendingSnapshot,
+  PAYMENTS_PENDING_FAIL_HOURS,
+} from "@/lib/erp/v2/payments-pending-health";
 import { getPrisma } from "@/lib/db/prisma";
 import { loadProjectionValidationInputs } from "@/services/erp-v2-inventory-projection";
 import { loadActiveSnapshotDate } from "@/services/erp-v2-stock-ledger";
@@ -18,6 +22,7 @@ import type {
   DriftCheckId,
   DriftCheckResult,
   HealthCheckStatus,
+  PaymentsPendingSummary,
   PipelineHealthCheck,
   PipelineKpis,
   PipelineRunSummary,
@@ -29,7 +34,11 @@ function classifyOverall(checks: Record<DriftCheckId, DriftCheckResult>): Health
   const values = Object.values(checks);
   if (
     values.some(
-      (c) => !c.pass && (c.id === "projection" || c.id === "pipeline_stale")
+      (c) =>
+        !c.pass &&
+        (c.id === "projection" ||
+          c.id === "pipeline_stale" ||
+          c.id === "payments_pending")
     )
   ) {
     return "FAIL";
@@ -202,20 +211,48 @@ async function checkMpDrift(snapshotDate: Date): Promise<DriftCheckResult> {
   };
 }
 
+async function checkPaymentsPendingDrift(): Promise<DriftCheckResult> {
+  const snap = await getPaymentsPendingSnapshot();
+  const pass = snap.status === "PASS";
+
+  return {
+    id: "payments_pending",
+    pass,
+    message: snap.message,
+    details: {
+      count: snap.count,
+      status: snap.status,
+      oldestOrderId: snap.oldestOrderId,
+      oldestPaidAt: snap.oldestPaidAt,
+      lagHours: snap.lagHours,
+      failThresholdHours: PAYMENTS_PENDING_FAIL_HOURS,
+    },
+  };
+}
+
 export async function runPipelineHealthCheck(): Promise<PipelineHealthCheck> {
   const snapshotDate = await loadActiveSnapshotDate();
 
-  const [projection, units, commercial, stock, mp, pipelineStale] =
+  const [projection, units, commercial, stock, mp, payments_pending, pipelineStale] =
     await Promise.all([
       checkProjectionDrift(),
       checkUnitsDrift(snapshotDate),
       checkCommercialDrift(snapshotDate),
       checkStockDrift(snapshotDate),
       checkMpDrift(snapshotDate),
+      checkPaymentsPendingDrift(),
       checkPipelineStaleDrift(),
     ]);
 
-  const checks = { projection, units, commercial, stock, mp, pipeline_stale: pipelineStale };
+  const checks = {
+    projection,
+    units,
+    commercial,
+    stock,
+    mp,
+    payments_pending,
+    pipeline_stale: pipelineStale,
+  };
   const overall = classifyOverall(checks);
   const driftDetected = Object.values(checks).some(
     (c) => !c.pass && c.id !== "projection"
@@ -351,10 +388,11 @@ export async function getPipelineSystemHealth(): Promise<{
   recentRuns: PipelineRunSummary[];
   healthCheck: PipelineHealthCheck | null;
   pipelineStale: PipelineStaleStatus | null;
+  paymentsPending: PaymentsPendingSummary | null;
 }> {
   const prisma = getPrisma();
 
-  const [latest, recent, kpis24h, healthCheck] = await Promise.all([
+  const [latest, recent, kpis24h, healthCheck, paymentsSnap] = await Promise.all([
     prisma.pipelineRun.findFirst({
       where: { status: { in: ["success", "failed"] } },
       orderBy: { startedAt: "desc" },
@@ -365,9 +403,20 @@ export async function getPipelineSystemHealth(): Promise<{
     }),
     getPipelineKpis(24),
     runPipelineHealthCheck(),
+    getPaymentsPendingSnapshot(),
   ]);
 
   const staleCheck = healthCheck.checks.pipeline_stale;
+
+  const paymentsPending: PaymentsPendingSummary = {
+    count: paymentsSnap.count,
+    status: paymentsSnap.status,
+    oldestOrderId: paymentsSnap.oldestOrderId,
+    oldestPaidAt: paymentsSnap.oldestPaidAt,
+    lagHours: paymentsSnap.lagHours,
+    failThresholdHours: PAYMENTS_PENDING_FAIL_HOURS,
+    message: paymentsSnap.message,
+  };
 
   return {
     latestRun: latest ? toPipelineRunSummary(latest) : null,
@@ -375,6 +424,7 @@ export async function getPipelineSystemHealth(): Promise<{
     recentRuns: recent.map(toPipelineRunSummary),
     healthCheck,
     pipelineStale: staleCheck ? toPipelineStaleSummary(staleCheck) : null,
+    paymentsPending,
   };
 }
 

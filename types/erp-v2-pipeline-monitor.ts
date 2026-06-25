@@ -4,7 +4,7 @@
 
 import type { LivePipelineReport } from "@/types/erp-v2-live-pipeline";
 
-export const PIPELINE_VERSION = "M5.6";
+export const PIPELINE_VERSION = "M6.3.3";
 
 export type PipelineTrigger = "scheduler" | "manual";
 

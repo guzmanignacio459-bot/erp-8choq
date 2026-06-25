@@ -53,6 +53,25 @@ export type PipelineMpStage = PipelineStageTiming & {
   errors: string[];
 };
 
+export type PipelinePaymentsStage = PipelineStageTiming & {
+  ordersPending: number;
+  ordersProcessed: number;
+  paymentsCreated: number;
+  paymentsUpdated: number;
+  paymentsSkipped: number;
+  ordersFailed: number;
+  syncedOrderIds: string[];
+  errors: string[];
+};
+
+export type PipelineFinancialItemsStage = PipelineStageTiming & {
+  ordersRequested: number;
+  ordersProcessed: number;
+  itemsUpdated: number;
+  itemsCreated: number;
+  errors: string[];
+};
+
 export type PipelineStockStage = PipelineStageTiming & {
   ordersProcessed: number;
   ordersSkipped: number;
@@ -76,7 +95,7 @@ export type PipelineProjectionStage = PipelineStageTiming & {
 };
 
 export type LivePipelineReport = {
-  milestone: "M5.3";
+  milestone: "M6.3.3";
   mode: "dry-run" | "write" | "report-only";
   startedAt: string;
   finishedAt: string;
@@ -85,7 +104,9 @@ export type LivePipelineReport = {
   import: PipelineImportStage;
   units: PipelineUnitsStage;
   commercial: PipelineCommercialStage;
+  payments: PipelinePaymentsStage;
   mp: PipelineMpStage;
+  financialItems: PipelineFinancialItemsStage;
   stock: PipelineStockStage;
   projection: PipelineProjectionStage;
   validations: {

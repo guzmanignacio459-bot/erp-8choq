@@ -44,6 +44,7 @@ export async function GET() {
         recentRuns: [],
         healthCheck: null,
         pipelineStale: null,
+        paymentsPending: null,
         error: gate.message,
       },
       gate.status
@@ -78,6 +79,7 @@ export async function GET() {
         recentRuns: [],
         healthCheck: null,
         pipelineStale: null,
+        paymentsPending: null,
         error: message,
       },
       500

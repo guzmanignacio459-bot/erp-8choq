@@ -46,6 +46,8 @@
     "m6:db:push": "node scripts/m6-db-push.mjs",
     "m6:financial-items:backfill": "npx tsx scripts/m6-financial-items-backfill.ts",
     "m6:financial-items:audit": "npx tsx scripts/m6-financial-items-audit.ts",
+    "m6.3.1:payments:recovery": "npx tsx scripts/m6.3.1-payments-recovery.ts",
+    "m6.3.3:pipeline:validate": "npx tsx scripts/m6.3.3-pipeline-validation.ts",
     "m3:mp:backfill": "node scripts/m3-mp-backfill-tn-link.mjs",
     "m3:mp:sync:pilot": "node scripts/m3-mp-sync-pilot.mjs",
     "m3:mp:refresh": "node scripts/m3-mp-refresh.mjs",

@@ -113,6 +113,7 @@ export function ErpSystemDashboard() {
   const kpis = data?.kpis24h;
   const health = data?.healthCheck;
   const pipelineStale = data?.pipelineStale;
+  const paymentsPending = data?.paymentsPending;
 
   return (
     <div className="mx-auto max-w-7xl space-y-6 p-4 sm:p-6">
@@ -149,6 +150,22 @@ export function ErpSystemDashboard() {
         <div className="erp-card flex items-start gap-3 border-[hsl(var(--erp-rose)/0.35)] p-4 text-sm text-[hsl(var(--erp-rose))]">
           <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
           <p>{error}</p>
+        </div>
+      )}
+
+      {paymentsPending && paymentsPending.status === "FAIL" && (
+        <div className="erp-card flex items-start gap-3 border-[hsl(var(--erp-rose)/0.45)] bg-[hsl(var(--erp-rose)/0.06)] p-4 text-sm text-[hsl(var(--erp-rose))]">
+          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+          <div>
+            <p className="font-medium">Payments Pending — MP sin sincronizar</p>
+            <p className="mt-1 text-[hsl(var(--erp-fg-muted))]">
+              {paymentsPending.count} órdenes MP pagadas sin fila en payments.
+              Más antigua: {paymentsPending.oldestOrderId ?? "—"}
+              {paymentsPending.lagHours != null
+                ? ` (${paymentsPending.lagHours}h atraso, umbral ${paymentsPending.failThresholdHours}h)`
+                : ""}
+            </p>
+          </div>
         </div>
       )}
 
@@ -244,7 +261,7 @@ export function ErpSystemDashboard() {
               KPIs últimas 24h
             </h2>
           </div>
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
             <KpiCard label="Runs totales" value={kpis.totalRuns} />
             <KpiCard
               label="Success rate"
@@ -257,6 +274,15 @@ export function ErpSystemDashboard() {
               sub={`máx ${kpis.maxDurationMs} ms`}
             />
             <KpiCard label="Órdenes importadas" value={kpis.ordersImported} />
+            <KpiCard
+              label="Payments Pending"
+              value={paymentsPending?.count ?? "—"}
+              sub={
+                paymentsPending
+                  ? `${paymentsPending.status}${paymentsPending.lagHours != null ? ` · ${paymentsPending.lagHours}h` : ""}`
+                  : undefined
+              }
+            />
             <KpiCard label="Warnings" value={kpis.warningsCount} />
           </div>
         </section>

@@ -7,15 +7,19 @@ import { randomUUID } from "crypto";
 import { validateInventoryProjection } from "@/lib/erp/v2/validate-inventory-projection";
 import { runPostT0CommercialAllocationLive } from "@/services/erp-v2-allocations-commercial-live";
 import { runPostT0MpAllocationLive } from "@/services/erp-v2-allocations-mp-live";
+import { runFinancialItemsSyncForOrders } from "@/services/erp-v2-financial-items-sync-live";
 import { runIncrementalLiveImport } from "@/services/erp-v2-live-import";
 import { loadProjectionValidationInputs } from "@/services/erp-v2-inventory-projection";
+import { runPostT0PaymentSyncLive } from "@/services/erp-v2-payments-sync-live";
 import { runPostT0StockLedgerLive } from "@/services/erp-v2-stock-ledger-live";
 import { runPostT0UnitExpansionLive } from "@/services/erp-v2-unit-expansion-live";
 import type {
   LivePipelineReport,
   PipelineCommercialStage,
+  PipelineFinancialItemsStage,
   PipelineImportStage,
   PipelineMpStage,
+  PipelinePaymentsStage,
   PipelineProjectionStage,
   PipelineStageStatus,
   PipelineStageTiming,
@@ -130,12 +134,31 @@ export async function runLivePipeline(opts?: {
     errors: [],
   });
 
+  const emptyPayments = skippedStage<PipelinePaymentsStage>({
+    ordersPending: 0,
+    ordersProcessed: 0,
+    paymentsCreated: 0,
+    paymentsUpdated: 0,
+    paymentsSkipped: 0,
+    ordersFailed: 0,
+    syncedOrderIds: [],
+    errors: [],
+  });
+
   const emptyMp = skippedStage<PipelineMpStage>({
     ordersProcessed: 0,
     ordersSkipped: 0,
     ordersFailed: 0,
     allocationsEnriched: 0,
     validationChecks: {},
+    errors: [],
+  });
+
+  const emptyFinancialItems = skippedStage<PipelineFinancialItemsStage>({
+    ordersRequested: 0,
+    ordersProcessed: 0,
+    itemsUpdated: 0,
+    itemsCreated: 0,
     errors: [],
   });
 
@@ -152,7 +175,9 @@ export async function runLivePipeline(opts?: {
   let importStage = emptyImport;
   let unitsStage = emptyUnits;
   let commercialStage = emptyCommercial;
+  let paymentsStage = emptyPayments;
   let mpStage = emptyMp;
+  let financialItemsStage = emptyFinancialItems;
   let stockStage = emptyStock;
   let projectionStage = skippedStage<PipelineProjectionStage>({
     snapshotQtyTotal: 0,
@@ -261,7 +286,44 @@ export async function runLivePipeline(opts?: {
       }
     }
 
-    // Stage 4 — MP
+    // Stage 4 — Payment sync (M6.3.3)
+    const fiOrderIds = new Set<string>();
+    if (!stop) {
+      const { result, durationMs, startedAt, finishedAt } = await timed(() =>
+        runPostT0PaymentSyncLive({ dryRun })
+      );
+      const status: PipelineStageStatus =
+        result.errors.length > 0 ? "failed" : "ok";
+      paymentsStage = {
+        status,
+        durationMs,
+        startedAt,
+        finishedAt,
+        ordersPending: result.stats.ordersPending,
+        ordersProcessed: result.stats.ordersProcessed,
+        paymentsCreated: result.stats.paymentsCreated,
+        paymentsUpdated: result.stats.paymentsUpdated,
+        paymentsSkipped: result.stats.paymentsSkipped,
+        ordersFailed: result.stats.ordersFailed,
+        syncedOrderIds: result.stats.syncedOrderIds,
+        errors: result.errors,
+      };
+      for (const id of result.stats.syncedOrderIds) {
+        fiOrderIds.add(id);
+      }
+      if (result.stats.ordersFailed > 0) {
+        warnings.push(
+          `payments: ${result.stats.ordersFailed} orders failed MP sync`
+        );
+      }
+      if (status === "failed") {
+        failedStage = "payments";
+        errors.push(...result.errors);
+        stop = true;
+      }
+    }
+
+    // Stage 5 — MP allocation
     if (!stop) {
       const { result, durationMs, startedAt, finishedAt } = await timed(() =>
         runPostT0MpAllocationLive({ dryRun })
@@ -282,6 +344,11 @@ export async function runLivePipeline(opts?: {
         validationChecks: result.stats.validationChecks,
         errors: result.errors,
       };
+      for (const item of result.orderResults) {
+        if (item.ok && !item.skipped) {
+          fiOrderIds.add(item.tnOrderId);
+        }
+      }
       if (status === "failed") {
         failedStage = "mp";
         errors.push(...result.errors);
@@ -289,7 +356,36 @@ export async function runLivePipeline(opts?: {
       }
     }
 
-    // Stage 5 — Stock
+    // Stage 6 — Financial items refresh (orders touched this run)
+    if (!stop) {
+      const orderIds = [...fiOrderIds];
+      const { result, durationMs, startedAt, finishedAt } = await timed(() =>
+        runFinancialItemsSyncForOrders(orderIds, { dryRun })
+      );
+      const status: PipelineStageStatus =
+        result.errors.length > 0 ? "failed" : "ok";
+      financialItemsStage = {
+        status,
+        durationMs,
+        startedAt,
+        finishedAt,
+        ordersRequested: result.stats.ordersRequested,
+        ordersProcessed: result.stats.ordersProcessed,
+        itemsUpdated: result.stats.itemsUpdated,
+        itemsCreated: result.stats.itemsCreated,
+        errors: result.errors,
+      };
+      if (result.errors.length > 0) {
+        warnings.push(`financial_items: ${result.errors.length} order errors`);
+      }
+      if (status === "failed") {
+        failedStage = "financial_items";
+        errors.push(...result.errors);
+        stop = true;
+      }
+    }
+
+    // Stage 7 — Stock
     if (!stop) {
       const { result, durationMs, startedAt, finishedAt } = await timed(() =>
         runPostT0StockLedgerLive({
@@ -328,7 +424,7 @@ export async function runLivePipeline(opts?: {
     }
   }
 
-  // Stage 6 — Projection (always when not stopped, or report-only)
+  // Stage 8 — Projection (always when not stopped, or report-only)
   if (!stop || reportOnly) {
     const { stage, critical } = await runProjectionStage();
     projectionStage = stage;
@@ -344,7 +440,11 @@ export async function runLivePipeline(opts?: {
     importStage.fetched === 0 &&
     unitsStage.unitsCreated === 0 &&
     commercialStage.allocationsCreated === 0 &&
+    paymentsStage.paymentsCreated === 0 &&
+    paymentsStage.paymentsUpdated === 0 &&
     mpStage.allocationsEnriched === 0 &&
+    financialItemsStage.itemsUpdated === 0 &&
+    financialItemsStage.itemsCreated === 0 &&
     stockStage.movementsCreated === 0;
 
   const p4 = projectionStage.vI4;
@@ -352,7 +452,7 @@ export async function runLivePipeline(opts?: {
     errors.length === 0 && p4 && failedStage === null;
 
   return {
-    milestone: "M5.3",
+    milestone: "M6.3.3",
     mode,
     startedAt: pipelineStarted.toISOString(),
     finishedAt: pipelineFinished.toISOString(),
@@ -361,7 +461,9 @@ export async function runLivePipeline(opts?: {
     import: importStage,
     units: unitsStage,
     commercial: commercialStage,
+    payments: paymentsStage,
     mp: mpStage,
+    financialItems: financialItemsStage,
     stock: stockStage,
     projection: projectionStage,
     validations: {

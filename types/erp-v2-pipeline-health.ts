@@ -10,6 +10,7 @@ export type DriftCheckId =
   | "commercial"
   | "stock"
   | "mp"
+  | "payments_pending"
   | "pipeline_stale";
 
 export type DriftCheckResult = {
@@ -82,6 +83,16 @@ export type PipelineStaleSummary = {
   lastRunStatus: string | null;
 };
 
+export type PaymentsPendingSummary = {
+  count: number;
+  status: HealthCheckStatus;
+  oldestOrderId: string | null;
+  oldestPaidAt: string | null;
+  lagHours: number | null;
+  failThresholdHours: number;
+  message: string;
+};
+
 export type PipelineSystemHealthResponse = {
   ok: boolean;
   fetchedAt: string;
@@ -90,5 +101,6 @@ export type PipelineSystemHealthResponse = {
   recentRuns: PipelineRunSummary[];
   healthCheck: PipelineHealthCheck | null;
   pipelineStale: PipelineStaleSummary | null;
+  paymentsPending: PaymentsPendingSummary | null;
   error?: string;
 };
