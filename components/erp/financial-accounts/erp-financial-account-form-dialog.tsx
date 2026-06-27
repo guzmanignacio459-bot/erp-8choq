@@ -14,16 +14,16 @@ import type {
 
 type FormState = {
   name: string;
+  displayName: string;
   ratePercent: string;
   color: string;
-  isDefault: boolean;
 };
 
 const DEFAULT_FORM: FormState = {
   name: "",
+  displayName: "",
   ratePercent: "0",
   color: "#6366f1",
-  isDefault: false,
 };
 
 type Props = {
@@ -52,9 +52,9 @@ export function ErpFinancialAccountFormDialog({
     if (mode === "edit" && account) {
       setForm({
         name: account.name,
+        displayName: account.displayName ?? "",
         ratePercent: String(account.ratePercent),
         color: account.color,
-        isDefault: account.isDefault,
       });
     } else {
       setForm(DEFAULT_FORM);
@@ -66,19 +66,20 @@ export function ErpFinancialAccountFormDialog({
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     const ratePercent = Number(form.ratePercent);
+    const displayName = form.displayName.trim() || null;
     if (mode === "create") {
       await onSubmit({
         name: form.name,
+        displayName,
         ratePercent: Number.isFinite(ratePercent) ? ratePercent : 0,
         color: form.color,
-        isDefault: form.isDefault,
       });
     } else {
       await onSubmit({
         name: form.name,
+        displayName,
         ratePercent: Number.isFinite(ratePercent) ? ratePercent : 0,
         color: form.color,
-        isDefault: form.isDefault,
       });
     }
   }
@@ -113,7 +114,20 @@ export function ErpFinancialAccountFormDialog({
               value={form.name}
               onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
               required
-              placeholder="Ej. Mercado Pago ARS"
+              placeholder="Ej. Santander"
+            />
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="fa-display-name">
+              Nombre display{" "}
+              <span className="font-normal text-[hsl(var(--erp-fg-muted))]">(opcional)</span>
+            </Label>
+            <Input
+              id="fa-display-name"
+              value={form.displayName}
+              onChange={(e) => setForm((f) => ({ ...f, displayName: e.target.value }))}
+              placeholder="Ej. Sueldos, Impuestos"
             />
           </div>
 
@@ -148,15 +162,10 @@ export function ErpFinancialAccountFormDialog({
             </div>
           </div>
 
-          <label className="flex items-center gap-2 text-sm text-[hsl(var(--erp-fg))]">
-            <input
-              type="checkbox"
-              checked={form.isDefault}
-              onChange={(e) => setForm((f) => ({ ...f, isDefault: e.target.checked }))}
-              className="rounded border-[hsl(var(--erp-border))]"
-            />
-            Cuenta por defecto
-          </label>
+          <p className="text-xs text-[hsl(var(--erp-fg-muted))]">
+            La cuenta destino se elige con &quot;Activar&quot; en la tabla. Solo puede haber una
+            activa a la vez.
+          </p>
 
           <div className="flex justify-end gap-2 pt-2">
             <Button type="button" variant="ghost" onClick={onClose} disabled={submitting}>

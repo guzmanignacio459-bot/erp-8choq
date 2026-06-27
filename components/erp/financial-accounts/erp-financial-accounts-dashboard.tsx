@@ -121,17 +121,25 @@ export function ErpFinancialAccountsDashboard() {
     }
   }
 
-  async function handleDeactivate(account: V2FinancialAccountRow) {
-    if (!confirm(`¿Desactivar la cuenta "${account.name}"?`)) return;
+  async function handleActivate(account: V2FinancialAccountRow) {
+    if (
+      !confirm(
+        `¿Activar "${account.name}" como cuenta destino? Las demás cuentas pasarán a inactivas.`
+      )
+    ) {
+      return;
+    }
     setBusyId(account.id);
     setError(null);
     try {
       const res = await fetch(`/api/v2/financial-accounts/${account.id}`, {
-        method: "DELETE",
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ isActive: true }),
       });
       const json = await res.json();
       if (!json.ok) {
-        setError(json.error ?? "Error al desactivar");
+        setError(json.error ?? "Error al activar");
         return;
       }
       await load();
@@ -152,7 +160,7 @@ export function ErpFinancialAccountsDashboard() {
               Financial Accounts
             </h1>
             <span className="rounded bg-[hsl(var(--erp-accent-violet)/0.12)] px-2 py-0.5 text-[11px] font-medium text-[hsl(var(--erp-accent-violet))]">
-              M6.5.1
+              M6.5.2.2
             </span>
           </div>
           <p className="mt-1 text-sm text-[hsl(var(--erp-fg-muted))]">
@@ -198,7 +206,7 @@ export function ErpFinancialAccountsDashboard() {
               <ErpFinancialAccountsTable
                 accounts={accounts}
                 onEdit={openEdit}
-                onDeactivate={handleDeactivate}
+                onActivate={handleActivate}
                 busyId={busyId}
               />
             )}

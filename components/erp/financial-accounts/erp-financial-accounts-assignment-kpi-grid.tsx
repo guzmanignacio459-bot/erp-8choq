@@ -8,6 +8,7 @@ import type { V2TransferAssignmentKpi } from "@/types/erp-v2-financial-account-a
 type KpiCard = {
   label: string;
   value: string;
+  sub?: string;
   icon: LucideIcon;
   accent: "violet" | "cyan" | "emerald" | "amber" | "rose";
 };
@@ -39,8 +40,12 @@ export function ErpFinancialAccountsAssignmentKpiGrid({ kpi }: Props) {
       accent: kpi.transferUnassigned > 0 ? "rose" : "emerald",
     },
     {
-      label: "Cuenta activa",
+      label: "Cuenta Destino Actual",
       value: kpi.activeAccountName ?? "—",
+      sub:
+        kpi.activeAccountRatePercent != null
+          ? `${kpi.activeAccountRatePercent.toFixed(2)}%`
+          : undefined,
       icon: Building2,
       accent: "violet",
     },
@@ -64,6 +69,11 @@ export function ErpFinancialAccountsAssignmentKpiGrid({ kpi }: Props) {
               <p className="mt-1 text-lg font-semibold tabular-nums text-[hsl(var(--erp-fg))]">
                 {card.value}
               </p>
+              {card.sub && (
+                <p className="mt-0.5 text-sm tabular-nums text-[hsl(var(--erp-fg-muted))]">
+                  {card.sub}
+                </p>
+              )}
             </div>
             <card.icon className="h-4 w-4 shrink-0 opacity-70" />
           </div>

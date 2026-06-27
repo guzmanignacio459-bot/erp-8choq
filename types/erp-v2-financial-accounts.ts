@@ -5,6 +5,7 @@
 export type V2FinancialAccountRow = {
   id: string;
   name: string;
+  displayName: string | null;
   ratePercent: number;
   color: string;
   isActive: boolean;
@@ -15,16 +16,25 @@ export type V2FinancialAccountRow = {
   updatedAt: string;
 };
 
+export type V2FinancialAccountsCurrentDestination = {
+  id: string;
+  name: string;
+  displayName: string | null;
+  ratePercent: number;
+};
+
 export type V2FinancialAccountsKpi = {
   totalCount: number;
   activeCount: number;
   inactiveCount: number;
   avgRatePercent: number;
   zeroRateCount: number;
+  currentDestination: V2FinancialAccountsCurrentDestination | null;
 };
 
 export type V2FinancialAccountCreateInput = {
   name: string;
+  displayName?: string | null;
   ratePercent?: number;
   color?: string;
   isDefault?: boolean;
@@ -32,6 +42,7 @@ export type V2FinancialAccountCreateInput = {
 
 export type V2FinancialAccountUpdateInput = {
   name?: string;
+  displayName?: string | null;
   ratePercent?: number;
   color?: string;
   isActive?: boolean;

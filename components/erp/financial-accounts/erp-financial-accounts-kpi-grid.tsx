@@ -1,4 +1,4 @@
-import { Layers, Percent, Power, Wallet } from "lucide-react";
+import { Layers, MapPin, Percent, Wallet } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
 import { formatRemitosCount } from "@/lib/erp/remitos-kpis";
@@ -8,6 +8,7 @@ import type { V2FinancialAccountsKpi } from "@/types/erp-v2-financial-accounts";
 type KpiCard = {
   label: string;
   value: string;
+  sub?: string;
   icon: LucideIcon;
   accent: "violet" | "cyan" | "emerald" | "amber";
 };
@@ -24,7 +25,16 @@ type Props = {
 };
 
 export function ErpFinancialAccountsKpiGrid({ kpi }: Props) {
+  const dest = kpi.currentDestination;
+
   const cards: KpiCard[] = [
+    {
+      label: "Cuenta Destino Actual",
+      value: dest?.name ?? "—",
+      sub: dest != null ? `${dest.ratePercent.toFixed(2)}%` : undefined,
+      icon: MapPin,
+      accent: "emerald",
+    },
     {
       label: "Total cuentas",
       value: formatRemitosCount(kpi.totalCount),
@@ -32,14 +42,8 @@ export function ErpFinancialAccountsKpiGrid({ kpi }: Props) {
       accent: "violet",
     },
     {
-      label: "Activas",
-      value: formatRemitosCount(kpi.activeCount),
-      icon: Power,
-      accent: "emerald",
-    },
-    {
-      label: "Tasa promedio",
-      value: `${kpi.avgRatePercent.toFixed(2)}%`,
+      label: "Tasa destino",
+      value: dest != null ? `${dest.ratePercent.toFixed(2)}%` : "—",
       icon: Percent,
       accent: "cyan",
     },
@@ -63,6 +67,11 @@ export function ErpFinancialAccountsKpiGrid({ kpi }: Props) {
               <p className="mt-1 text-xl font-semibold tabular-nums text-[hsl(var(--erp-fg))]">
                 {card.value}
               </p>
+              {card.sub && (
+                <p className="mt-0.5 text-sm tabular-nums text-[hsl(var(--erp-fg-muted))]">
+                  {card.sub}
+                </p>
+              )}
             </div>
             <card.icon className="h-4 w-4 shrink-0 opacity-70" />
           </div>

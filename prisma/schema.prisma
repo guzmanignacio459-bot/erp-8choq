@@ -597,6 +597,8 @@ enum FinancialAssignmentSource {
 model FinancialAccount {
   id          String   @id @default(cuid())
   name        String
+  /// Etiqueta operativa opcional (M6.6 — sueldos, impuestos, etc.)
+  displayName String?  @map("display_name")
   ratePercent Decimal  @default(0) @map("rate_percent") @db.Decimal(5, 2)
   color       String   @default("#6366f1")
   isActive    Boolean  @default(true) @map("is_active")

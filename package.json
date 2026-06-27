@@ -56,6 +56,8 @@
     "m6.5.2:transfer-fee:audit": "npx tsx scripts/m6.5.2-transfer-fee-audit.ts",
     "m6.5.2.1:remediation": "npx tsx scripts/m6.5.2.1-remediation.ts",
     "m6.5.2.1:pipeline:validate": "npx tsx scripts/m6.5.2.1-pipeline-validation.ts",
+    "m6.5.2.2:db:push": "node scripts/m6.5.2.2-db-push.mjs",
+    "m6.5.2.2:audit": "npx tsx scripts/m6.5.2.2-audit.ts",
     "m3:mp:backfill": "node scripts/m3-mp-backfill-tn-link.mjs",
     "m3:mp:sync:pilot": "node scripts/m3-mp-sync-pilot.mjs",
     "m3:mp:refresh": "node scripts/m3-mp-refresh.mjs",

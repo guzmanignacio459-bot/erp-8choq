@@ -38,6 +38,7 @@ export type V2TransferAssignmentKpi = {
   transferUnassigned: number;
   activeAccountId: string | null;
   activeAccountName: string | null;
+  activeAccountRatePercent: number | null;
   activePeriodId: string | null;
 };
 

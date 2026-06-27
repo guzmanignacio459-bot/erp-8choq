@@ -85,6 +85,8 @@ export async function fetchTransferAssignmentKpi(): Promise<V2TransferAssignment
     transferUnassigned: transferIds.filter((id) => !assignedSet.has(id)).length,
     activeAccountId: active?.account.id ?? null,
     activeAccountName: active?.account.name ?? null,
+    activeAccountRatePercent:
+      active != null ? Number(active.account.ratePercent) : null,
     activePeriodId: active?.period?.id ?? null,
   };
 }
@@ -266,7 +268,8 @@ export async function createV2FinancialAccountPeriod(
 export async function ensureDefaultFinancialAccount(): Promise<string> {
   const prisma = getPrisma();
   const existing = await prisma.financialAccount.findFirst({
-    where: { isActive: true, isDefault: true },
+    where: { isActive: true },
+    orderBy: [{ isDefault: "desc" }, { createdAt: "asc" }],
   });
   if (existing) return existing.id;
 
@@ -301,28 +304,28 @@ export async function seedDemoFinancialAccounts(): Promise<void> {
         ratePercent: 5,
         color: "#f59e0b",
         isDefault: false,
-        isActive: true,
+        isActive: false,
       },
       {
         name: "Ignacio",
         ratePercent: 0,
         color: "#10b981",
         isDefault: false,
-        isActive: true,
+        isActive: false,
       },
       {
         name: "Proveedores",
         ratePercent: 0,
         color: "#6366f1",
         isDefault: false,
-        isActive: true,
+        isActive: false,
       },
       {
         name: "Carpintería",
         ratePercent: 0,
         color: "#8b5cf6",
         isDefault: false,
-        isActive: true,
+        isActive: false,
       },
     ],
   });

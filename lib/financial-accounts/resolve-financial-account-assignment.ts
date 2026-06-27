@@ -38,8 +38,8 @@ export async function findActivePeriodAt(
 export async function findDefaultAccount(): Promise<FinancialAccount | null> {
   const prisma = getPrisma();
   return prisma.financialAccount.findFirst({
-    where: { isActive: true, isDefault: true },
-    orderBy: { createdAt: "asc" },
+    where: { isActive: true },
+    orderBy: [{ isDefault: "desc" }, { createdAt: "asc" }],
   });
 }
 
