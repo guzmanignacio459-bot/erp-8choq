@@ -35,7 +35,7 @@ export function ErpFinancialAccountsTable({
           <tr className="border-b border-[hsl(var(--erp-border))] text-[11px] uppercase tracking-wide text-[hsl(var(--erp-fg-subtle))]">
             <th className="px-3 py-2 font-medium">Nombre</th>
             <th className="px-3 py-2 font-medium text-right">Tasa %</th>
-            <th className="px-3 py-2 font-medium text-right">Saldo</th>
+            <th className="px-3 py-2 font-medium text-right">Saldo Operativo</th>
             <th className="px-3 py-2 font-medium">Estado</th>
             <th className="px-3 py-2 font-medium text-right">Acciones</th>
           </tr>
@@ -70,9 +70,8 @@ export function ErpFinancialAccountsTable({
               <td className="px-3 py-2 text-right tabular-nums">
                 {account.ratePercent.toFixed(2)}%
               </td>
-              <td className="px-3 py-2 text-right tabular-nums text-[hsl(var(--erp-fg-muted))]">
-                {formatRemitosCurrency(account.balanceMock)}
-                <span className="ml-1 text-[10px]">mock</span>
+              <td className="px-3 py-2 text-right tabular-nums text-[hsl(var(--erp-fg))]">
+                {formatRemitosCurrency(account.operatingBalance)}
               </td>
               <td className="px-3 py-2">
                 {account.isActive === true ? (

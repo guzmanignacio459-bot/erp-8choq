@@ -4,7 +4,7 @@ import type { V2FinancialAccountRow } from "@/types/erp-v2-financial-accounts";
 export function accountsForBalanceChart(
   accounts: V2FinancialAccountRow[]
 ): V2FinancialAccountRow[] {
-  return [...accounts].sort((a, b) => b.balanceMock - a.balanceMock);
+  return [...accounts].sort((a, b) => b.operatingBalance - a.operatingBalance);
 }
 
 export function chartBarHeightPercent(

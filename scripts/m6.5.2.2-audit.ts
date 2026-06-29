@@ -8,7 +8,9 @@ import fs from "fs";
 import path from "path";
 
 import { accountsForBalanceChart } from "../lib/financial-accounts/balance-chart";
-import { mockAccountBalance } from "../lib/financial-accounts/mock-balance";
+import {
+  fetchOperatingBalanceTotals,
+} from "../lib/financial-accounts/operating-balance";
 import {
   enforceSingleActiveFinancialAccount,
   fetchV2FinancialAccounts,
@@ -70,40 +72,46 @@ function validateUiInvariants(): {
 }
 
 function validateChartProportional(
-  accounts: Array<{ id: string; ratePercent: number; balanceMock: number }>
+  accounts: Array<{ operatingBalance: number }>
 ): { pass: boolean; reason?: string } {
   if (accounts.length < 2) return { pass: true };
 
-  const balances = accounts.map((a) => a.balanceMock);
-  const unique = new Set(balances);
-  if (unique.size < 2) {
-    return { pass: false, reason: "all balances identical — chart not proportional" };
-  }
+  const balances = accounts.map((a) => a.operatingBalance);
+  const positive = balances.filter((b) => b > 0);
+  if (positive.length < 2) return { pass: true };
 
-  const max = Math.max(...balances);
-  const min = Math.min(...balances.filter((b) => b > 0));
+  const max = Math.max(...positive);
+  const min = Math.min(...positive);
   if (max > 0 && min / max < 0.05) {
     return { pass: true };
   }
 
-  for (const a of accounts) {
-    const expected = mockAccountBalance(a.id, a.ratePercent);
-    if (Math.abs(expected - a.balanceMock) > 0.01) {
-      return {
-        pass: false,
-        reason: `balanceMock mismatch for ${a.id}`,
-      };
-    }
-  }
-
-  const heights = accounts.map((a) =>
-    max > 0 ? (a.balanceMock / max) * 100 : 0
-  );
+  const heights = positive.map((b) => (max > 0 ? (b / max) * 100 : 0));
   const heightUnique = new Set(heights.map((h) => Math.round(h)));
   if (heightUnique.size < 2) {
     return { pass: false, reason: "bar heights would not differ" };
   }
 
+  return { pass: true };
+}
+
+function validateOperatingBalanceRows(
+  accounts: Array<{
+    name: string;
+    billingTotal: number;
+    transferFeeTotal: number;
+    operatingBalance: number;
+  }>
+): { pass: boolean; reason?: string } {
+  for (const a of accounts) {
+    const expected = Math.round((a.billingTotal - a.transferFeeTotal) * 100) / 100;
+    if (Math.abs(expected - a.operatingBalance) > 0.02) {
+      return {
+        pass: false,
+        reason: `operatingBalance mismatch for ${a.name}`,
+      };
+    }
+  }
   return { pass: true };
 }
 
@@ -140,6 +148,9 @@ async function main() {
     const activeRows = list.data.filter((a) => a.isActive);
     const chartRows = accountsForBalanceChart(list.data);
     const chartCheck = validateChartProportional(list.data);
+    const operatingCheck = validateOperatingBalanceRows(list.data);
+    const totals = await fetchOperatingBalanceTotals();
+    const sumOperating = list.data.reduce((s, a) => s + a.operatingBalance, 0);
     const ui = validateUiInvariants();
     ui.pass =
       ui.activateButton &&
@@ -156,6 +167,9 @@ async function main() {
       atLeastOneActive: activeRows.length >= 1,
       noZeroActive: beforeActive === 0 ? enforce.afterActive === 1 : true,
       chartProportional: chartCheck.pass,
+      operatingBalanceFormula: operatingCheck.pass,
+      operatingTotalsMatch:
+        Math.abs(sumOperating - totals.operatingBalanceTotal) <= 0.02,
       chartIncludesAllAccounts: chartRows.length === list.data.length,
       inactiveHaveActivateAction: ui.activateButton,
       noDeactivateButton: ui.noDeactivateButton,
@@ -183,10 +197,13 @@ async function main() {
         accountCount: list.data.length,
         balances: list.data.map((a) => ({
           name: a.name,
-          balanceMock: a.balanceMock,
+          operatingBalance: a.operatingBalance,
+          billingTotal: a.billingTotal,
+          transferFeeTotal: a.transferFeeTotal,
         })),
         ...chartCheck,
       },
+      operatingTotals: totals,
       checks,
       pass: Object.values(checks).every(Boolean),
     };

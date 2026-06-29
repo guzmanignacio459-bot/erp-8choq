@@ -4,7 +4,11 @@
 
 import type { FinancialAccount } from "@prisma/client";
 
-import { mockAccountBalance } from "@/lib/financial-accounts/mock-balance";
+import type { AccountOperatingBalance } from "@/lib/financial-accounts/operating-balance";
+import {
+  fetchOperatingBalanceForAccount,
+  fetchOperatingBalancesByAccount,
+} from "@/lib/financial-accounts/operating-balance";
 import { getPrisma } from "@/lib/db/prisma";
 import type {
   V2FinancialAccountCreateInput,
@@ -14,7 +18,10 @@ import type {
   V2FinancialAccountsKpi,
 } from "@/types/erp-v2-financial-accounts";
 
-function mapRow(row: FinancialAccount): V2FinancialAccountRow {
+function mapRow(
+  row: FinancialAccount,
+  metrics?: AccountOperatingBalance
+): V2FinancialAccountRow {
   const ratePercent = Number(row.ratePercent);
   return {
     id: row.id,
@@ -24,7 +31,9 @@ function mapRow(row: FinancialAccount): V2FinancialAccountRow {
     color: row.color,
     isActive: Boolean(row.isActive),
     isDefault: Boolean(row.isDefault),
-    balanceMock: mockAccountBalance(row.id, ratePercent),
+    operatingBalance: metrics?.operatingBalance ?? 0,
+    billingTotal: metrics?.billingTotal ?? 0,
+    transferFeeTotal: metrics?.transferFeeTotal ?? 0,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
@@ -104,7 +113,7 @@ export async function activateExclusiveFinancialAccount(
       });
     });
 
-    return { ok: true, data: mapRow(row) };
+    return { ok: true, data: mapRow(row, await fetchOperatingBalanceForAccount(row.id)) };
   } catch (err) {
     return {
       ok: false,
@@ -125,7 +134,8 @@ export async function fetchV2FinancialAccounts(opts?: {
       where: opts?.activeOnly ? { isActive: true } : undefined,
       orderBy: [{ isActive: "desc" }, { name: "asc" }],
     });
-    const data = rows.map(mapRow);
+    const balances = await fetchOperatingBalancesByAccount();
+    const data = rows.map((row) => mapRow(row, balances.get(row.id)));
     return { ok: true, data, count: data.length, kpi: computeKpi(data) };
   } catch (err) {
     return {
@@ -165,7 +175,7 @@ export async function createV2FinancialAccount(
       },
     });
 
-    return { ok: true, data: mapRow(row) };
+    return { ok: true, data: mapRow(row, await fetchOperatingBalanceForAccount(row.id)) };
   } catch (err) {
     return {
       ok: false,
@@ -225,7 +235,7 @@ export async function updateV2FinancialAccount(
       },
     });
 
-    return { ok: true, data: mapRow(row) };
+    return { ok: true, data: mapRow(row, await fetchOperatingBalanceForAccount(row.id)) };
   } catch (err) {
     return {
       ok: false,

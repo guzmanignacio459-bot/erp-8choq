@@ -10,8 +10,10 @@ export type V2FinancialAccountRow = {
   color: string;
   isActive: boolean;
   isDefault: boolean;
-  /** Placeholder hasta ledger de saldos (M6.5+) */
-  balanceMock: number;
+  /** M6.6.1 — SUM(tn_total) − SUM(transfer_fee) por assignments */
+  operatingBalance: number;
+  billingTotal: number;
+  transferFeeTotal: number;
   createdAt: string;
   updatedAt: string;
 };
