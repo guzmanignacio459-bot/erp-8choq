@@ -62,6 +62,8 @@
     "m6.5.2.5:write-gate:validate": "npx tsx scripts/m6.5.2.5-write-gate-validation.ts",
     "m6.5.2.6:assignments:coverage": "npx tsx scripts/m6.5.2.6-transfer-assignment-coverage.ts",
     "m6.5.3:net-real:backfill": "npx tsx scripts/m6.5.3-net-real-backfill.ts",
+    "m6.5.4:historical:audit": "npx tsx scripts/m6.5.4-historical-assignment-audit.ts",
+    "m6.5.4:historical:backfill": "npx tsx scripts/m6.5.4-historical-backfill.ts",
     "m3:mp:backfill": "node scripts/m3-mp-backfill-tn-link.mjs",
     "m3:mp:sync:pilot": "node scripts/m3-mp-sync-pilot.mjs",
     "m3:mp:refresh": "node scripts/m3-mp-refresh.mjs",
