@@ -3,11 +3,12 @@
  *
  * 1 tn_order_item_unit + allocation → 1 financial_item (idempotent upsert).
  * Copia mp/tn/shipping desde tn_order_item_allocations (prorrateo M5 por bruto).
- * netAmount = net_real (gross − discount − mp − tn − shipping).
+ * netAmount = net_real (gross − discount − mp − tn − shipping − transfer_fee).
  */
 
 import type { Prisma } from "@prisma/client";
 
+import { computeNetReal } from "@/lib/financial-items/compute-net-real";
 import { amountsFromAllocation } from "@/lib/financial-items/resolve-unit-amounts";
 import { getPrisma } from "@/lib/db/prisma";
 import type { GenerateFromTnResult } from "@/types/erp-v2-financial-items";
@@ -87,30 +88,6 @@ export async function generateFinancialItemsFromTn(
       const order = unit.tnOrder;
       const unitKey = buildUnitKey(unit.id);
 
-      const payload = {
-        originType: ORIGIN_TYPE,
-        originId: unit.tnOrderId,
-        originItemId: unit.tnOrderItemId,
-        unitKey,
-        date: resolveItemDate(order),
-        customerName: order.customerName,
-        sku: unit.sku ?? item.sku ?? "",
-        productName: item.productName ?? "",
-        variantName: unit.talle ?? item.variantName,
-        quantity: 1,
-        grossAmount: amounts.grossAmount,
-        discountAllocated: amounts.discountAllocated,
-        tnFeeAllocated: amounts.tnFeeAllocated,
-        mpFeeAllocated: amounts.mpFeeAllocated,
-        shippingAllocated: amounts.shippingAllocated,
-        metaAdsAllocated: null as number | null,
-        netAmount: amounts.netAmount,
-        paymentMethod: order.paymentMethod,
-        status: resolveStatus(order),
-        sourceCreatedAt: order.tnCreatedAt,
-        generatorVersion: GENERATOR_VERSION,
-      };
-
       if (dryRun) continue;
 
       try {
@@ -121,8 +98,44 @@ export async function generateFinancialItemsFromTn(
               unitKey,
             },
           },
-          select: { id: true },
+          select: { id: true, transferFeeAllocated: true },
         });
+
+        const transferFeeAllocated = existing
+          ? Number(existing.transferFeeAllocated)
+          : 0;
+        const netAmount = computeNetReal({
+          grossAmount: amounts.grossAmount,
+          discountAllocated: amounts.discountAllocated,
+          tnFeeAllocated: amounts.tnFeeAllocated,
+          mpFeeAllocated: amounts.mpFeeAllocated,
+          shippingAllocated: amounts.shippingAllocated,
+          transferFeeAllocated,
+        });
+
+        const payload = {
+          originType: ORIGIN_TYPE,
+          originId: unit.tnOrderId,
+          originItemId: unit.tnOrderItemId,
+          unitKey,
+          date: resolveItemDate(order),
+          customerName: order.customerName,
+          sku: unit.sku ?? item.sku ?? "",
+          productName: item.productName ?? "",
+          variantName: unit.talle ?? item.variantName,
+          quantity: 1,
+          grossAmount: amounts.grossAmount,
+          discountAllocated: amounts.discountAllocated,
+          tnFeeAllocated: amounts.tnFeeAllocated,
+          mpFeeAllocated: amounts.mpFeeAllocated,
+          shippingAllocated: amounts.shippingAllocated,
+          metaAdsAllocated: null as number | null,
+          netAmount,
+          paymentMethod: order.paymentMethod,
+          status: resolveStatus(order),
+          sourceCreatedAt: order.tnCreatedAt,
+          generatorVersion: GENERATOR_VERSION,
+        };
 
         await prisma.financialItem.upsert({
           where: {

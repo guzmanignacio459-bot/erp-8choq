@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { checkErpV2DbRead, checkErpV2DbWrite } from "@/lib/db/assert-staging";
+import { checkErpV2DbRead, checkFinancialAccountsWrite } from "@/lib/db/assert-staging";
 import {
   createV2FinancialAccountPeriod,
   fetchV2FinancialAccountPeriods,
@@ -32,7 +32,7 @@ export async function GET() {
  * POST /api/v2/financial-account-periods
  */
 export async function POST(req: Request) {
-  const gate = checkErpV2DbWrite();
+  const gate = checkFinancialAccountsWrite();
   const fetchedAt = new Date().toISOString();
 
   if (!gate.ok) {

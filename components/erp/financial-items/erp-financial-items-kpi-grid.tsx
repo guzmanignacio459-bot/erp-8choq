@@ -13,6 +13,7 @@ type KpiCard = {
   value: string;
   icon: LucideIcon;
   accent: "violet" | "cyan" | "emerald" | "amber" | "rose";
+  hint?: string;
 };
 
 const ACCENT: Record<KpiCard["accent"], string> = {
@@ -79,6 +80,7 @@ export function ErpFinancialItemsKpiGrid({ kpi, periodLabel }: Props) {
       value: formatRemitosCurrency(kpi.netTotal),
       icon: DollarSign,
       accent: "emerald",
+      hint: "Bruto − desc − fees − shipping − TF",
     },
   ];
 
@@ -94,7 +96,9 @@ export function ErpFinancialItemsKpiGrid({ kpi, periodLabel }: Props) {
               <p className="mt-1 text-xl font-semibold tabular-nums text-[hsl(var(--erp-fg))]">
                 {card.value}
               </p>
-              <p className="mt-1 text-[10px] text-[hsl(var(--erp-fg-muted))]">{hint}</p>
+              <p className="mt-1 text-[10px] text-[hsl(var(--erp-fg-muted))]">
+                {card.hint ?? hint}
+              </p>
             </div>
             <card.icon className="h-4 w-4 shrink-0 opacity-70" />
           </div>

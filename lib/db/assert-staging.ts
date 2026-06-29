@@ -87,17 +87,23 @@ export function checkErpV2DbRead(): ErpV2GateResult {
   return { ok: true, urlMeta: maskDatabaseUrl(url) };
 }
 
-/** Valida gates M3.1b write — Neon staging + ERP_V2_DB_WRITE=true. */
-export function checkErpV2DbWrite(): ErpV2GateResult {
-  if (process.env.ERP_V2_DB_WRITE !== "true") {
-    return {
-      ok: false,
-      status: 503,
-      message:
-        "ERP V2 DB write disabled. Set ERP_V2_DB_WRITE=true in .env.local (staging only).",
-    };
+/** Mensaje user-facing cuando write gate falla (sin ensuciar dashboard read-only). */
+export function erpV2WriteDisabledMessage(): string {
+  if (process.env.NODE_ENV === "development") {
+    return "ERP V2 DB write disabled. Set ERP_V2_DB_WRITE=true in .env.local (staging only).";
   }
+  return "Las modificaciones no están habilitadas en este entorno.";
+}
 
+/** Mensaje user-facing cuando Financial Accounts write gate falla. */
+export function financialAccountsWriteDisabledMessage(): string {
+  if (process.env.NODE_ENV === "development") {
+    return "Financial Accounts write disabled. Set FINANCIAL_ACCOUNTS_WRITE=true in .env.local (staging only).";
+  }
+  return "Las modificaciones de cuentas financieras no están habilitadas en este entorno.";
+}
+
+function validateNeonStagingWriteGate(blockedLabel: string): ErpV2GateResult {
   const url = (process.env.DATABASE_URL ?? "").trim();
   if (!url) {
     return {
@@ -113,7 +119,7 @@ export function checkErpV2DbWrite(): ErpV2GateResult {
       return {
         ok: false,
         status: 503,
-        message: `DATABASE_URL blocked for ERP V2 write (matches ${re.source}). Use staging only.`,
+        message: `DATABASE_URL blocked for ${blockedLabel} (matches ${re.source}). Use staging only.`,
       };
     }
   }
@@ -129,4 +135,30 @@ export function checkErpV2DbWrite(): ErpV2GateResult {
   }
 
   return { ok: true, urlMeta };
+}
+
+/** Valida gates M3.1b write — Neon staging + ERP_V2_DB_WRITE=true. */
+export function checkErpV2DbWrite(): ErpV2GateResult {
+  if (process.env.ERP_V2_DB_WRITE !== "true") {
+    return {
+      ok: false,
+      status: 503,
+      message: erpV2WriteDisabledMessage(),
+    };
+  }
+
+  return validateNeonStagingWriteGate("ERP V2 write");
+}
+
+/** M6.5.2.5 — Financial Accounts write — Neon staging + FINANCIAL_ACCOUNTS_WRITE=true. */
+export function checkFinancialAccountsWrite(): ErpV2GateResult {
+  if (process.env.FINANCIAL_ACCOUNTS_WRITE !== "true") {
+    return {
+      ok: false,
+      status: 503,
+      message: financialAccountsWriteDisabledMessage(),
+    };
+  }
+
+  return validateNeonStagingWriteGate("Financial Accounts write");
 }

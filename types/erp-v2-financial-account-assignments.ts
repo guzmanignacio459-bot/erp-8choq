@@ -49,6 +49,7 @@ export type V2FinancialAccountsDashboardResponse = {
   kpi: V2FinancialAccountsKpi | null;
   assignments: V2TransferAssignmentKpi | null;
   recentAssignments: V2FinancialAccountAssignmentRow[];
+  capabilities?: { write: boolean };
   fetchedAt: string;
   source: string;
   error?: string;

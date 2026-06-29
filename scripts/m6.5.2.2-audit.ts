@@ -7,6 +7,7 @@
 import fs from "fs";
 import path from "path";
 
+import { accountsForBalanceChart } from "../lib/financial-accounts/balance-chart";
 import { mockAccountBalance } from "../lib/financial-accounts/mock-balance";
 import {
   enforceSingleActiveFinancialAccount,
@@ -23,6 +24,50 @@ loadEnvLocal();
 
 const WIP = path.join(process.cwd(), "_wip");
 const REPORT_PATH = path.join(WIP, "m6.5.2.2-audit-report.json");
+
+function validateUiInvariants(): {
+  pass: boolean;
+  activateButton: boolean;
+  noDeactivateButton: boolean;
+  chartAllAccounts: boolean;
+  dashboardReadOnlySafe: boolean;
+} {
+  const tablePath = path.join(
+    process.cwd(),
+    "components/erp/financial-accounts/erp-financial-accounts-table.tsx"
+  );
+  const chartPath = path.join(
+    process.cwd(),
+    "components/erp/financial-accounts/erp-financial-accounts-balance-chart.tsx"
+  );
+  const dashboardPath = path.join(
+    process.cwd(),
+    "components/erp/financial-accounts/erp-financial-accounts-dashboard.tsx"
+  );
+
+  const tableSrc = fs.readFileSync(tablePath, "utf8");
+  const chartSrc = fs.readFileSync(chartPath, "utf8");
+  const dashboardSrc = fs.readFileSync(dashboardPath, "utf8");
+
+  const dashboardReadOnlySafe =
+    dashboardSrc.includes("loadError") &&
+    dashboardSrc.includes("actionError") &&
+    !dashboardSrc.includes("ERP_V2_DB_WRITE") &&
+    !dashboardSrc.includes("checkErpV2DbWrite");
+
+  return {
+    activateButton:
+      tableSrc.includes("Activar") &&
+      tableSrc.includes("account.isActive !== true"),
+    noDeactivateButton:
+      !tableSrc.includes("Desactivar") && !tableSrc.includes("onDeactivate"),
+    chartAllAccounts:
+      chartSrc.includes("accountsForBalanceChart") &&
+      !chartSrc.includes("filter((a) => a.isActive)"),
+    dashboardReadOnlySafe,
+    pass: false,
+  };
+}
 
 function validateChartProportional(
   accounts: Array<{ id: string; ratePercent: number; balanceMock: number }>
@@ -93,7 +138,14 @@ async function main() {
 
     const assignmentKpi = await fetchTransferAssignmentKpi();
     const activeRows = list.data.filter((a) => a.isActive);
+    const chartRows = accountsForBalanceChart(list.data);
     const chartCheck = validateChartProportional(list.data);
+    const ui = validateUiInvariants();
+    ui.pass =
+      ui.activateButton &&
+      ui.noDeactivateButton &&
+      ui.chartAllAccounts &&
+      ui.dashboardReadOnlySafe;
 
     const destinationMatches =
       list.kpi.currentDestination?.id === assignmentKpi.activeAccountId &&
@@ -104,6 +156,10 @@ async function main() {
       atLeastOneActive: activeRows.length >= 1,
       noZeroActive: beforeActive === 0 ? enforce.afterActive === 1 : true,
       chartProportional: chartCheck.pass,
+      chartIncludesAllAccounts: chartRows.length === list.data.length,
+      inactiveHaveActivateAction: ui.activateButton,
+      noDeactivateButton: ui.noDeactivateButton,
+      dashboardReadOnlySafe: ui.dashboardReadOnlySafe,
       dashboardDestination: destinationMatches,
     };
 

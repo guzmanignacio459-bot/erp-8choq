@@ -75,13 +75,13 @@ export function ErpFinancialAccountsTable({
                 <span className="ml-1 text-[10px]">mock</span>
               </td>
               <td className="px-3 py-2">
-                {account.isActive ? (
+                {account.isActive === true ? (
                   <span className="inline-flex items-center gap-1 rounded bg-[hsl(var(--erp-accent-emerald)/0.12)] px-2 py-0.5 text-[11px] font-medium text-[hsl(var(--erp-accent-emerald))]">
                     <CheckCircle2 className="h-3 w-3" />
                     Cuenta Activa
                   </span>
                 ) : (
-                  <span className="inline-flex rounded px-2 py-0.5 text-[11px] font-medium bg-[hsl(var(--erp-fg-muted)/0.12)] text-[hsl(var(--erp-fg-muted))]">
+                  <span className="inline-flex rounded bg-[hsl(var(--erp-fg-muted)/0.12)] px-2 py-0.5 text-[11px] font-medium text-[hsl(var(--erp-fg-muted))]">
                     Inactiva
                   </span>
                 )}
@@ -98,10 +98,9 @@ export function ErpFinancialAccountsTable({
                     <Pencil className="mr-1 h-3.5 w-3.5" />
                     Editar
                   </Button>
-                  {!account.isActive && (
+                  {account.isActive !== true && (
                     <Button
                       type="button"
-                      variant="outline"
                       size="sm"
                       disabled={busyId === account.id}
                       onClick={() => onActivate(account)}

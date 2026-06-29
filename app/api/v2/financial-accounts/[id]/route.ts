@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { checkErpV2DbWrite } from "@/lib/db/assert-staging";
+import { checkFinancialAccountsWrite } from "@/lib/db/assert-staging";
 import {
   deactivateV2FinancialAccount,
   updateV2FinancialAccount,
@@ -29,7 +29,7 @@ function json(body: V2FinancialAccountMutationResponse, status = 200): NextRespo
  * PATCH /api/v2/financial-accounts/[id] — update account
  */
 export async function PATCH(req: Request, ctx: RouteContext) {
-  const gate = checkErpV2DbWrite();
+  const gate = checkFinancialAccountsWrite();
   const fetchedAt = new Date().toISOString();
   const { id } = await ctx.params;
 
@@ -88,7 +88,7 @@ export async function PATCH(req: Request, ctx: RouteContext) {
  * DELETE /api/v2/financial-accounts/[id] — soft delete (is_active=false)
  */
 export async function DELETE(_req: Request, ctx: RouteContext) {
-  const gate = checkErpV2DbWrite();
+  const gate = checkFinancialAccountsWrite();
   const fetchedAt = new Date().toISOString();
   const { id } = await ctx.params;
 

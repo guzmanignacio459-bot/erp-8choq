@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Plus, RefreshCw, Wallet } from "lucide-react";
+import { CheckCircle2, Plus, RefreshCw, Wallet, X } from "lucide-react";
 
 import { ErpFinancialAccountsAssignmentKpiGrid } from "@/components/erp/financial-accounts/erp-financial-accounts-assignment-kpi-grid";
 import { ErpFinancialAccountFormDialog } from "@/components/erp/financial-accounts/erp-financial-account-form-dialog";
@@ -31,7 +31,9 @@ export function ErpFinancialAccountsDashboard() {
   const [assignmentKpi, setAssignmentKpi] = useState<V2TransferAssignmentKpi | null>(null);
   const [recentAssignments, setRecentAssignments] = useState<V2FinancialAccountAssignmentRow[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [fetchedAt, setFetchedAt] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [formOpen, setFormOpen] = useState(false);
@@ -43,7 +45,7 @@ export function ErpFinancialAccountsDashboard() {
     const guard = fetchGuardRef.current;
     const { reqId, signal } = guard.begin();
     setLoading(true);
-    setError(null);
+    setLoadError(null);
     try {
       const res = await fetch("/api/v2/financial-accounts", {
         cache: "no-store",
@@ -64,7 +66,7 @@ export function ErpFinancialAccountsDashboard() {
     } catch (err: unknown) {
       if (isAbortError(err)) return;
       if (!guard.isCurrent(reqId)) return;
-      setError(err instanceof Error ? err.message : String(err));
+      setLoadError(err instanceof Error ? err.message : String(err));
       setAccounts([]);
       setKpi(null);
       setAssignmentKpi(null);
@@ -79,13 +81,21 @@ export function ErpFinancialAccountsDashboard() {
     return () => fetchGuardRef.current.cancel();
   }, [load]);
 
+  useEffect(() => {
+    if (!successMessage) return;
+    const t = setTimeout(() => setSuccessMessage(null), 5000);
+    return () => clearTimeout(t);
+  }, [successMessage]);
+
   function openCreate() {
+    setActionError(null);
     setFormMode("create");
     setEditAccount(null);
     setFormOpen(true);
   }
 
   function openEdit(account: V2FinancialAccountRow) {
+    setActionError(null);
     setFormMode("edit");
     setEditAccount(account);
     setFormOpen(true);
@@ -95,7 +105,7 @@ export function ErpFinancialAccountsDashboard() {
     payload: V2FinancialAccountCreateInput | V2FinancialAccountUpdateInput
   ) {
     setSubmitting(true);
-    setError(null);
+    setActionError(null);
     try {
       const url =
         formMode === "create"
@@ -109,13 +119,16 @@ export function ErpFinancialAccountsDashboard() {
       });
       const json = await res.json();
       if (!json.ok) {
-        setError(json.error ?? "Error al guardar");
+        setActionError(json.error ?? "Error al guardar");
         return;
       }
       setFormOpen(false);
+      setSuccessMessage(
+        formMode === "create" ? "Cuenta creada correctamente." : "Cuenta actualizada."
+      );
       await load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setActionError(err instanceof Error ? err.message : String(err));
     } finally {
       setSubmitting(false);
     }
@@ -130,7 +143,8 @@ export function ErpFinancialAccountsDashboard() {
       return;
     }
     setBusyId(account.id);
-    setError(null);
+    setActionError(null);
+    setSuccessMessage(null);
     try {
       const res = await fetch(`/api/v2/financial-accounts/${account.id}`, {
         method: "PATCH",
@@ -139,12 +153,13 @@ export function ErpFinancialAccountsDashboard() {
       });
       const json = await res.json();
       if (!json.ok) {
-        setError(json.error ?? "Error al activar");
+        setActionError(json.error ?? "Error al activar la cuenta");
         return;
       }
+      setSuccessMessage(`"${account.name}" es ahora la cuenta destino activa.`);
       await load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setActionError(err instanceof Error ? err.message : String(err));
     } finally {
       setBusyId(null);
     }
@@ -160,7 +175,7 @@ export function ErpFinancialAccountsDashboard() {
               Financial Accounts
             </h1>
             <span className="rounded bg-[hsl(var(--erp-accent-violet)/0.12)] px-2 py-0.5 text-[11px] font-medium text-[hsl(var(--erp-accent-violet))]">
-              M6.5.2.2
+              M6.5.2.3
             </span>
           </div>
           <p className="mt-1 text-sm text-[hsl(var(--erp-fg-muted))]">
@@ -184,9 +199,40 @@ export function ErpFinancialAccountsDashboard() {
         </div>
       </header>
 
-      {error && (
+      {loadError && (
         <div className="rounded-lg border border-[hsl(var(--erp-accent-rose)/0.4)] bg-[hsl(var(--erp-accent-rose)/0.08)] px-4 py-3 text-sm text-[hsl(var(--erp-accent-rose))]">
-          {error}
+          {loadError}
+        </div>
+      )}
+
+      {successMessage && (
+        <div className="flex items-center justify-between gap-3 rounded-lg border border-[hsl(var(--erp-accent-emerald)/0.35)] bg-[hsl(var(--erp-accent-emerald)/0.08)] px-4 py-3 text-sm text-[hsl(var(--erp-accent-emerald))]">
+          <span className="inline-flex items-center gap-2">
+            <CheckCircle2 className="h-4 w-4 shrink-0" />
+            {successMessage}
+          </span>
+          <button
+            type="button"
+            onClick={() => setSuccessMessage(null)}
+            className="rounded p-1 hover:bg-[hsl(var(--erp-accent-emerald)/0.12)]"
+            aria-label="Cerrar"
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      )}
+
+      {actionError && (
+        <div className="flex items-center justify-between gap-3 rounded-lg border border-[hsl(var(--erp-accent-rose)/0.4)] bg-[hsl(var(--erp-accent-rose)/0.08)] px-4 py-3 text-sm text-[hsl(var(--erp-accent-rose))]">
+          <span>{actionError}</span>
+          <button
+            type="button"
+            onClick={() => setActionError(null)}
+            className="rounded p-1 hover:bg-[hsl(var(--erp-accent-rose)/0.12)]"
+            aria-label="Cerrar"
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
         </div>
       )}
 

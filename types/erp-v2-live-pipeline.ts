@@ -44,6 +44,17 @@ export type PipelineCommercialStage = PipelineStageTiming & {
   errors: string[];
 };
 
+export type PipelineTransferAssignmentsStage = PipelineStageTiming & {
+  ordersPending: number;
+  ordersProcessed: number;
+  assignmentsCreated: number;
+  assignmentsWouldCreate: number;
+  assignmentsSkipped: number;
+  ordersFailed: number;
+  ordersUnresolved: number;
+  errors: string[];
+};
+
 export type PipelineMpStage = PipelineStageTiming & {
   ordersProcessed: number;
   ordersSkipped: number;
@@ -104,6 +115,7 @@ export type LivePipelineReport = {
   import: PipelineImportStage;
   units: PipelineUnitsStage;
   commercial: PipelineCommercialStage;
+  transferAssignments: PipelineTransferAssignmentsStage;
   payments: PipelinePaymentsStage;
   mp: PipelineMpStage;
   financialItems: PipelineFinancialItemsStage;

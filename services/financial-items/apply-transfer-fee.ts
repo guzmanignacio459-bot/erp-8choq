@@ -1,7 +1,8 @@
 /**
- * M6.5.2 — Aplica transfer_fee_allocated a financial_items (sin tocar net_real)
+ * M6.5.2 / M6.5.3 — Aplica transfer_fee_allocated y recalcula net_amount
  */
 
+import { computeNetReal } from "@/lib/financial-items/compute-net-real";
 import {
   allocateTransferFeeToUnits,
   computeTransferFeeOrder,
@@ -59,7 +60,15 @@ export async function applyTransferFeeForTnOrder(
 
   const items = await prisma.financialItem.findMany({
     where: { originType: "TN_ORDER", originId: tnOrderId },
-    select: { id: true, unitKey: true, grossAmount: true },
+    select: {
+      id: true,
+      unitKey: true,
+      grossAmount: true,
+      discountAllocated: true,
+      tnFeeAllocated: true,
+      mpFeeAllocated: true,
+      shippingAllocated: true,
+    },
     orderBy: { unitKey: "asc" },
   });
 
@@ -97,7 +106,17 @@ export async function applyTransferFeeForTnOrder(
       const transferFeeAllocated = byUnitKey.get(fi.unitKey) ?? 0;
       await prisma.financialItem.update({
         where: { id: fi.id },
-        data: { transferFeeAllocated },
+        data: {
+          transferFeeAllocated,
+          netAmount: computeNetReal({
+            grossAmount: Number(fi.grossAmount),
+            discountAllocated: Number(fi.discountAllocated),
+            tnFeeAllocated: Number(fi.tnFeeAllocated),
+            mpFeeAllocated: Number(fi.mpFeeAllocated),
+            shippingAllocated: Number(fi.shippingAllocated),
+            transferFeeAllocated,
+          }),
+        },
       });
     }
   }

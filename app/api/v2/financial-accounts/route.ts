@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { checkErpV2DbRead, checkErpV2DbWrite } from "@/lib/db/assert-staging";
+import { checkErpV2DbRead, checkFinancialAccountsWrite } from "@/lib/db/assert-staging";
 import {
   fetchRecentAssignments,
   fetchTransferAssignmentKpi,
@@ -98,6 +98,7 @@ export async function GET(req: Request) {
     kpi: result.kpi,
     assignments,
     recentAssignments,
+    capabilities: { write: checkFinancialAccountsWrite().ok },
     fetchedAt,
     source: "neon-staging",
   });
@@ -107,7 +108,7 @@ export async function GET(req: Request) {
  * POST /api/v2/financial-accounts — create account
  */
 export async function POST(req: Request) {
-  const gate = checkErpV2DbWrite();
+  const gate = checkFinancialAccountsWrite();
   const fetchedAt = new Date().toISOString();
 
   if (!gate.ok) {

@@ -1,4 +1,8 @@
 import { formatRemitosCurrency } from "@/lib/erp/remitos-kpis";
+import {
+  accountsForBalanceChart,
+  chartBarHeightPercent,
+} from "@/lib/financial-accounts/balance-chart";
 import type { V2FinancialAccountRow } from "@/types/erp-v2-financial-accounts";
 
 type Props = {
@@ -6,7 +10,7 @@ type Props = {
 };
 
 export function ErpFinancialAccountsBalanceChart({ accounts }: Props) {
-  const sorted = [...accounts].sort((a, b) => b.balanceMock - a.balanceMock);
+  const sorted = accountsForBalanceChart(accounts);
   const maxBalance = Math.max(...sorted.map((a) => a.balanceMock), 0);
 
   if (sorted.length === 0) {
@@ -22,36 +26,17 @@ export function ErpFinancialAccountsBalanceChart({ accounts }: Props) {
       <p className="text-[11px] uppercase tracking-wide text-[hsl(var(--erp-fg-subtle))]">
         Saldo por cuenta
         <span className="ml-2 normal-case text-[hsl(var(--erp-fg-muted))]">
-          (mock — altura proporcional al monto)
+          (mock — {sorted.length} cuentas, barras proporcionales)
         </span>
       </p>
-      <div className="flex h-56 items-end gap-3 border-b border-[hsl(var(--erp-border))] pb-2">
+      <div className="space-y-3">
         {sorted.map((account) => {
-          const heightPct =
-            maxBalance > 0 ? (account.balanceMock / maxBalance) * 100 : 0;
-          const barHeight = account.balanceMock > 0 ? Math.max(heightPct, 2) : 0;
+          const widthPct = chartBarHeightPercent(account.balanceMock, maxBalance);
 
           return (
-            <div
-              key={account.id}
-              className="flex min-w-0 flex-1 flex-col items-center gap-2"
-            >
-              <span className="text-[10px] tabular-nums text-[hsl(var(--erp-fg-muted))]">
-                {formatRemitosCurrency(account.balanceMock)}
-              </span>
-              <div className="flex h-44 w-full max-w-[80px] items-end justify-center">
-                <div
-                  className="w-full rounded-t-md transition-all"
-                  style={{
-                    height: `${barHeight}%`,
-                    backgroundColor: account.color,
-                    opacity: account.isActive ? 1 : 0.45,
-                  }}
-                  title={`${account.name}: ${formatRemitosCurrency(account.balanceMock)}`}
-                />
-              </div>
+            <div key={account.id} className="grid grid-cols-[88px_1fr_auto] items-center gap-3">
               <span
-                className="max-w-full truncate text-center text-[11px] text-[hsl(var(--erp-fg))]"
+                className="truncate text-[11px] font-medium text-[hsl(var(--erp-fg))]"
                 title={account.name}
               >
                 {account.name}
@@ -60,6 +45,20 @@ export function ErpFinancialAccountsBalanceChart({ accounts }: Props) {
                     ●
                   </span>
                 )}
+              </span>
+              <div className="relative h-7 overflow-hidden rounded-md bg-[hsl(var(--erp-bg-elevated))]">
+                <div
+                  className="absolute inset-y-0 left-0 rounded-md transition-all"
+                  style={{
+                    width: `${Math.max(widthPct, account.balanceMock > 0 ? 2 : 0)}%`,
+                    backgroundColor: account.color,
+                    opacity: account.isActive ? 1 : 0.55,
+                  }}
+                  title={`${account.name}: ${formatRemitosCurrency(account.balanceMock)}`}
+                />
+              </div>
+              <span className="min-w-[72px] text-right text-[11px] tabular-nums text-[hsl(var(--erp-fg-muted))]">
+                {formatRemitosCurrency(account.balanceMock)}
               </span>
             </div>
           );
