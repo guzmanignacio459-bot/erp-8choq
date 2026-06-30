@@ -65,6 +65,8 @@
     "m6.5.4:historical:audit": "npx tsx scripts/m6.5.4-historical-assignment-audit.ts",
     "m6.5.4:historical:backfill": "npx tsx scripts/m6.5.4-historical-backfill.ts",
     "m6.6.1:operating-balance:validate": "npx tsx scripts/m6.6.1-operating-balance-validation.ts",
+    "m6.6.2.1:paid-date-preservation:validate": "npx tsx scripts/m6.6.2.1-paid-date-preservation-validation.ts",
+    "m6.6.2.2:paid-date:audit": "npx tsx scripts/m6.6.2.2-paid-date-remediation-audit.ts",
     "m3:mp:backfill": "node scripts/m3-mp-backfill-tn-link.mjs",
     "m3:mp:sync:pilot": "node scripts/m3-mp-sync-pilot.mjs",
     "m3:mp:refresh": "node scripts/m3-mp-refresh.mjs",

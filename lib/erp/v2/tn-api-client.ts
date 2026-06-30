@@ -129,6 +129,11 @@ export type FetchTnOrdersUpdatedSinceOpts = {
 /**
  * Lista órdenes TN modificadas desde watermark (sin filtro payment_status
  * para capturar cancelaciones y refunds).
+ *
+ * M6.6.2.1 — El list incremental (`updated_at_min`) puede devolver
+ * `payment_status=paid` con `paid_at=null` aunque `/orders/{id}` sí tenga
+ * `paid_at`. El live import preserva `tn_paid_at` existente en updates;
+ * ver mergeTnPaidAt en map-tn-order-record.ts.
  */
 export async function fetchTnOrdersUpdatedSince(
   opts: FetchTnOrdersUpdatedSinceOpts

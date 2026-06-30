@@ -10,6 +10,8 @@ import {
 import {
   mapTnOrderRecord,
   maxTnUpdatedAt,
+  mergeRawTnPayloadPaidAt,
+  mergeTnPaidAt,
   type TnOrderUpsertRecord,
 } from "@/lib/erp/v2/map-tn-order-record";
 import {
@@ -111,18 +113,37 @@ function orderWriteData(
   };
 }
 
+type ExistingOrderPaidSnapshot = {
+  tnPaidAt: Date | null;
+  rawTnPayload: unknown;
+};
+
 function orderUpdateData(
   rec: TnOrderUpsertRecord,
-  commercialStatusAt?: Date
+  opts?: {
+    commercialStatusAt?: Date;
+    existing?: ExistingOrderPaidSnapshot;
+  }
 ): Prisma.TnOrderUpdateInput {
-  const base = orderWriteData(rec, commercialStatusAt ?? null);
+  const mergedRec: TnOrderUpsertRecord = opts?.existing
+    ? {
+        ...rec,
+        tnPaidAt: mergeTnPaidAt(rec.tnPaidAt, opts.existing.tnPaidAt),
+        rawTnPayload: mergeRawTnPayloadPaidAt(
+          rec.rawTnPayload,
+          opts.existing.rawTnPayload
+        ),
+      }
+    : rec;
+
+  const base = orderWriteData(mergedRec, opts?.commercialStatusAt ?? null);
   const { id: _id, commercialStatusAt: _csa, ...rest } = base;
   const update: Prisma.TnOrderUpdateInput = {
     ...rest,
     syncedAt: new Date(),
   };
-  if (commercialStatusAt) {
-    update.commercialStatusAt = commercialStatusAt;
+  if (opts?.commercialStatusAt) {
+    update.commercialStatusAt = opts.commercialStatusAt;
   }
   return update;
 }
@@ -261,6 +282,8 @@ export async function runIncrementalLiveImport(opts?: {
         select: {
           id: true,
           commercialStatus: true,
+          tnPaidAt: true,
+          rawTnPayload: true,
           _count: { select: { itemUnits: true } },
         },
       })
@@ -272,6 +295,8 @@ export async function runIncrementalLiveImport(opts?: {
       {
         commercialStatus: r.commercialStatus as TnCommercialStatus | null,
         unitCount: r._count.itemUnits,
+        tnPaidAt: r.tnPaidAt,
+        rawTnPayload: r.rawTnPayload,
       },
     ])
   );
@@ -330,7 +355,13 @@ export async function runIncrementalLiveImport(opts?: {
     } else {
       await prisma.tnOrder.update({
         where: { id: rec.id },
-        data: orderUpdateData(rec, statusChanged ? now : undefined),
+        data: orderUpdateData(rec, {
+          commercialStatusAt: statusChanged ? now : undefined,
+          existing: {
+            tnPaidAt: prev.tnPaidAt,
+            rawTnPayload: prev.rawTnPayload,
+          },
+        }),
       });
       stats.ordersUpdated += 1;
       if (itemsAction === "replace") {

@@ -56,6 +56,36 @@ function parseDate(value: unknown): Date | null {
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
+function hasPaidAtValue(value: unknown): boolean {
+  return value != null && value !== "";
+}
+
+/**
+ * M6.6.2.1 — Preserva tnPaidAt existente cuando el payload incremental trae null.
+ * incoming.tnPaidAt ?? existing.tnPaidAt
+ */
+export function mergeTnPaidAt(
+  incoming: Date | null,
+  existing: Date | null | undefined
+): Date | null {
+  return incoming ?? existing ?? null;
+}
+
+/**
+ * M6.6.2.1 — Preserva raw.paid_at en updates si incoming lo trae null/vacío.
+ */
+export function mergeRawTnPayloadPaidAt(
+  incomingRaw: TnOrderRaw,
+  existingRaw: unknown
+): TnOrderRaw {
+  if (hasPaidAtValue(incomingRaw.paid_at)) return incomingRaw;
+
+  const existing = existingRaw as Record<string, unknown> | null | undefined;
+  if (!hasPaidAtValue(existing?.paid_at)) return incomingRaw;
+
+  return { ...incomingRaw, paid_at: existing!.paid_at };
+}
+
 function str(value: unknown): string {
   return String(value ?? "").trim();
 }
