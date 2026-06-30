@@ -4,11 +4,14 @@
  *   npm run m6.6.2.2:paid-date:audit
  *   npm run m6.6.2.2:paid-date:audit -- --full   # all gap orders via TN detail
  */
+import type { Prisma } from "@prisma/client";
 import fs from "fs";
 import path from "path";
 
 import { fetchTnOrderById } from "../lib/erp/v2/tn-api-client";
-import { isTnTransferOrder } from "../lib/financial-accounts/is-tn-transfer-order";
+import {
+  isTnTransferOrder,
+} from "../lib/financial-accounts/is-tn-transfer-order";
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { loadEnvLocal } = require("./lib/l0-env.mjs");
@@ -44,10 +47,18 @@ type GapRow = {
   tnPaymentStatus: string | null;
   paymentGateway: string | null;
   paymentMethod: string | null;
-  rawTnPayload: unknown;
+  rawTnPayload: Prisma.JsonValue;
   tnTotal: unknown;
   tnCreatedAt: Date | null;
 };
+
+function isTransferGapRow(row: GapRow): boolean {
+  return isTnTransferOrder({
+    paymentMethod: row.paymentMethod,
+    paymentGateway: row.paymentGateway,
+    rawTnPayload: row.rawTnPayload,
+  });
+}
 
 function isMercadoPago(row: GapRow): boolean {
   const pg = String(row.paymentGateway ?? "").toLowerCase();
@@ -67,9 +78,9 @@ function sleep(ms: number) {
 }
 
 function pickStratifiedSample(rows: GapRow[], n: number): GapRow[] {
-  const transfer = rows.filter((r) => isTnTransferOrder(r));
+  const transfer = rows.filter((r) => isTransferGapRow(r));
   const mp = rows.filter((r) => isMercadoPago(r));
-  const other = rows.filter((r) => !isTnTransferOrder(r) && !isMercadoPago(r));
+  const other = rows.filter((r) => !isTransferGapRow(r) && !isMercadoPago(r));
 
   const perBucket = Math.floor(n / 3);
   const shuffle = <T,>(a: T[]) => [...a].sort(() => Math.random() - 0.5);
@@ -129,7 +140,7 @@ async function main() {
   const { prisma } = client;
 
   try {
-    const gapRows = await prisma.tnOrder.findMany({
+    const gapRows = (await prisma.tnOrder.findMany({
       where: { tnPaymentStatus: "paid", tnPaidAt: null },
       select: {
         id: true,
@@ -140,14 +151,14 @@ async function main() {
         tnTotal: true,
         tnCreatedAt: true,
       },
-    });
+    })) as GapRow[];
 
     const transferIds = new Set(
-      gapRows.filter((r) => isTnTransferOrder(r)).map((r) => r.id)
+      gapRows.filter((r) => isTransferGapRow(r)).map((r) => r.id)
     );
     const mpIds = new Set(gapRows.filter((r) => isMercadoPago(r)).map((r) => r.id));
 
-    const sample50 = pickStratifiedSample(gapRows as GapRow[], 50);
+    const sample50 = pickStratifiedSample(gapRows, 50);
     const sampleResults = [];
 
     for (const row of sample50) {
@@ -210,7 +221,7 @@ async function main() {
     }
 
     // Phase 4 — impact from DB (static, no writes)
-    const impactRows = await prisma.$queryRawUnsafe<Array<{
+    type ImpactRow = {
       con_assignment: number;
       sin_assignment: number;
       transfer_sin_assignment: number;
@@ -218,7 +229,9 @@ async function main() {
       tf: number;
       net_real: number;
       facturacion_transfer: number;
-    }>>(`
+    };
+
+    const impactRows = (await prisma.$queryRawUnsafe(`
       SELECT
         COUNT(DISTINCT fa.origin_id)::int AS con_assignment,
         COUNT(DISTINCT o.id) FILTER (WHERE fa.id IS NULL)::int AS sin_assignment,
@@ -233,7 +246,7 @@ async function main() {
       LEFT JOIN financial_account_assignments fa ON fa.origin_type='TN_ORDER' AND fa.origin_id=o.id
       LEFT JOIN financial_items fi ON fi.origin_type='TN_ORDER' AND fi.origin_id=o.id
       WHERE ${GAP_WHERE}
-    `);
+    `)) as ImpactRow[];
 
     const imp = impactRows[0]!;
     const recoveryRate = full
