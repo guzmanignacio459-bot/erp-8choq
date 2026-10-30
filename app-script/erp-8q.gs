@@ -3,7 +3,7 @@
  * Versión: 2026-01-04-v6-all-skus
  ***********************/
 const API_VERSION = '2026-01-04-v6-all-skus';
-const BUILD_ID = 'ERP8Q-PROD-2026-06-08-J3-XS';
+const BUILD_ID = 'ERP8Q-PROD-2026-10-30-TALLE-UNICO';
 
 
 
@@ -218,9 +218,20 @@ function existsDetalleGeneral_(detalleGeneral) {
  * - Si viene sin talle, y `talle` existe, lo AGREGA.
  * - Respeta/agrega SCNL si corresponde por `owner`.
  */
+function canonicalAccessorySku_(sku) {
+  const s = String(sku || '').trim().toUpperCase();
+  if (s === '1585770256' || s === '1585770256-UNICO') return '1585770256';
+  if (s === 'UP100-SCNL' || s === 'UP100-UNICO-SCNL') return 'UP100-SCNL';
+  return '';
+}
+
 function normalizeSku_(sku, talle, owner) {
   const raw = String(sku || '').trim();
   if (!raw) return '';
+
+  // Accesorios de talle único: no reescribir el SKU ni inventar un sufijo de talle.
+  const accessorySku = canonicalAccessorySku_(raw);
+  if (accessorySku) return accessorySku;
 
   const t = String(talle || '').trim().toUpperCase();
   const o = String(owner || '').trim().toUpperCase();
@@ -541,7 +552,7 @@ function adjustStockForItems(items, sign) {
     const sku = rawSku.toUpperCase(); // clave para matchear STOCK MAESTRO
     const qty = Number(it.cantidad || 0);
     if (!sku || !qty) return;
-    if (isGiftySku_(sku)) return;
+    if (isGiftySku_(sku) || canonicalAccessorySku_(sku)) return;
 
     const { size } = parseSkuParts(sku);
     if (!size) throw new Error(`SKU sin talle válido: ${sku}`);
@@ -1181,7 +1192,7 @@ const normalizeDiscountAsignado_ = (x) => {
     const aggregated = {};
     for (const it of expanded) {
       const sku = String(it.sku || "").trim().toUpperCase();
-      if (!sku || isGiftySku_(sku)) continue;
+      if (!sku || isGiftySku_(sku) || canonicalAccessorySku_(sku)) continue;
       aggregated[sku] = (aggregated[sku] || 0) + 1;
     }
 
