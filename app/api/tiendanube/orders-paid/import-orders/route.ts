@@ -5,7 +5,7 @@ export const maxDuration = 300; // 5 min
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-const BUILD_MARK = "IMPORT_ORDERS__LIVE_CHECK__2026_01_22__Z9";
+const BUILD_MARK = "IMPORT_ORDERS__TALLE_UNICO__2026_10_30";
 
 // =========================
 // ===== Env (runtime) =====
@@ -132,6 +132,39 @@ function parseSkuOwnerSize(skuRaw: unknown): { sku: string; owner: "" | "SCNL"; 
   const size = VALID_SIZES.has(last as any) ? last : null;
 
   return { sku, owner, size };
+}
+
+function normalizeVariantLabel(value: unknown): string {
+  return String(value ?? "")
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\s+/g, " ");
+}
+
+function variantIndicatesTalleUnico(product: any): boolean {
+  const raw = product?.variant_values;
+  const values = Array.isArray(raw) ? raw : raw == null ? [] : [raw];
+  return values.some((value) => {
+    if (value && typeof value === "object") {
+      return normalizeVariantLabel(value.es ?? value.pt ?? value.en ?? value.name ?? value.value) === "talle unico";
+    }
+    return normalizeVariantLabel(value) === "talle unico";
+  });
+}
+
+/**
+ * Accesorios puntuales sin talle de prenda.
+ * No convierte un SKU inválido cualquiera en UNICO.
+ * El SKU original se conserva en el ítem.
+ */
+function accessoryUnicoTalle(skuNorm: string, product: any): "UNICO" | null {
+  if (skuNorm === "1585770256") {
+    return variantIndicatesTalleUnico(product) ? "UNICO" : null;
+  }
+  if (skuNorm === "UP100-SCNL") return "UNICO";
+  return null;
 }
 
 function pickOrderDateISO(order: any): string {
@@ -321,7 +354,7 @@ function sleep(ms: number) {
   return new Promise((r) => setTimeout(r, ms));
 }
 
-function expandOrderItemsToUnitRows(order: any): { items: RemitoItemBase[]; errors: string[] } {
+export function expandOrderItemsToUnitRows(order: any): { items: RemitoItemBase[]; errors: string[] } {
   const errors: string[] = [];
   const out: RemitoItemBase[] = [];
 
@@ -360,7 +393,10 @@ function expandOrderItemsToUnitRows(order: any): { items: RemitoItemBase[]; erro
       continue;
     }
 
-    const { sku, owner, size } = parseSkuOwnerSize(skuRaw);
+    const parsed = parseSkuOwnerSize(skuRaw);
+    const sku = parsed.sku;
+    const owner = parsed.owner;
+    const size = parsed.size ?? accessoryUnicoTalle(skuNorm, p);
 
     if (!sku) {
       errors.push(`order_id=${order?.id ?? "?"}: item sin sku (name=${String(p?.name ?? "")})`);
@@ -540,7 +576,7 @@ function allocateProportional(
 // - allocateProportional(rawItems, descuentoTotalAbs, shippingOwnerCostForItems, feeTotal)
 // - type RemitoItemAllocated
 //
-function buildRemitoPayload(order: any): { data: any; itemErrors: string[] } {
+export function buildRemitoPayload(order: any): { data: any; itemErrors: string[] } {
   const fechaISO = pickOrderDateISO(order);
 
   const firstName = String(order?.customer?.firstname ?? order?.customer?.first_name ?? "").trim();
