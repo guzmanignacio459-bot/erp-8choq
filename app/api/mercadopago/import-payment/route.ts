@@ -5,6 +5,7 @@ export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 import { NextResponse } from "next/server";
+import { impuestoConciliable } from "@/lib/erp/mp-retenciones";
 
 /**
  * MP Import Payment — Hardened / Idempotent
@@ -247,7 +248,7 @@ function normalizeMpForGas(mpRaw: any, fallbackPaymentId: number) {
   const transactionAmount = Number(mpRaw?.transaction_amount ?? 0);
   const netReceivedAmount = Number(mpRaw?.transaction_details?.net_received_amount ?? 0);
 
-  const taxTotal = Number(mpRaw?.taxes_amount ?? 0);
+  const taxTotal = impuestoConciliable(mpRaw).taxTotal;
 
   const feeDetails = Array.isArray(mpRaw?.fee_details) ? mpRaw.fee_details : [];
   const sumByType = (type: string) =>

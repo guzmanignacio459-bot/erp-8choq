@@ -3,6 +3,8 @@
  * Compatible con contrato GAS normalizeMpForGas — sin escribir GAS.
  */
 
+import { impuestoConciliable } from "@/lib/erp/mp-retenciones";
+
 export type NormalizedMpPayment = {
   mpPaymentId: string;
   mpAdditionalReference: string | null;
@@ -59,7 +61,7 @@ export function normalizeMpPayment(
       ?.net_received_amount ?? 0
   );
 
-  const taxTotal = Number(mpRaw?.taxes_amount ?? 0);
+  const taxTotal = impuestoConciliable(mpRaw).taxTotal;
   const feeDetails = mpRaw?.fee_details;
   const feeTotal = sumFeeByType(feeDetails, "mercadopago_fee");
   const financingTotal = sumFeeByType(feeDetails, "financing_fee");

@@ -2,6 +2,8 @@
  * M3 — normalize MP API (mirror lib/erp/v2/normalize-mp-payment.ts)
  */
 
+import { impuestoConciliable } from "../../lib/erp/mp-retenciones.mjs";
+
 function parseMpDate(value) {
   if (!value) return null;
   const d = new Date(String(value));
@@ -25,7 +27,7 @@ export function normalizeMpPayment(mpRaw, fallbackPaymentId) {
     mpRaw?.transaction_details?.net_received_amount ?? 0
   );
 
-  const taxTotal = Number(mpRaw?.taxes_amount ?? 0);
+  const taxTotal = impuestoConciliable(mpRaw).taxTotal;
   const feeDetails = mpRaw?.fee_details;
   const feeTotal = sumFeeByType(feeDetails, "mercadopago_fee");
   const financingTotal = sumFeeByType(feeDetails, "financing_fee");
