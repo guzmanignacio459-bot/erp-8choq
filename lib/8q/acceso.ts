@@ -1,7 +1,7 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 
 export function secretoConfigurado(secret: string | undefined): boolean {
-  return (secret ?? "").trim().length >= 20;
+  return (secret ?? "").trim().length >= 8;
 }
 
 export function accesoValido(clave: string | null, secret: string | undefined): boolean {
