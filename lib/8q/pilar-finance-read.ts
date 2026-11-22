@@ -170,7 +170,9 @@ export async function loadPilarFinance(input: {
   const dueno = input.dueno === "8Q" || input.dueno === "SCNL" ? input.dueno : "";
   if (!resolved.ok) return resolved;
   const allowed = gate(input.acceso === true);
-  if (!allowed.ok) return { ok: false, ...resolved, reason: allowed.reason };
+  if (!allowed.ok) {
+    return { ok: false, from: resolved.from, to: resolved.to, medio: resolved.medio, reason: allowed.reason };
+  }
 
   const { from, to, medio } = resolved;
   const method = medio ? Prisma.sql`AND r.metodo_pago = ${medio}` : Prisma.empty;
