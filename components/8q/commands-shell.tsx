@@ -11,7 +11,7 @@ export function CommandsShell({ children }: { children: ReactNode }) {
             <p className="text-micro uppercase text-erp-accent">8CHOQ</p>
             <h1 className="text-xl font-semibold tracking-tight">8Q COMMANDS</h1>
           </div>
-          <p className="text-xs text-erp-fg-muted">Local · sin publicación</p>
+          <p className="text-xs text-erp-fg-muted">{process.env.VERCEL ? "Publicado" : "Local"}</p>
         </div>
       </header>
       <CommandsNav />
