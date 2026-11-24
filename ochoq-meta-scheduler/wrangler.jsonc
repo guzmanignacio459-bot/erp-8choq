@@ -4,9 +4,9 @@
   "compatibility_date": "2026-11-22",
   "workers_dev": false,
   "vars": {
-    "OCHOQ_URL": ""
+    "OCHOQ_URL": "https://8q-commands.vercel.app"
   },
   "triggers": {
-    "crons": []
+    "crons": ["*/15 * * * *"]
   }
 }
