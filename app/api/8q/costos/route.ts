@@ -1,5 +1,6 @@
 import { accesoValido } from "@/lib/8q/acceso";
 import { costoVigencia, importesDelFormulario, skusDeLaCarga, type ModalidadCosto } from "@/lib/8q/costos";
+import { guardarVigencias } from "@/lib/8q/costos-read";
 
 export const dynamic = "force-dynamic";
 
@@ -26,5 +27,17 @@ export async function POST(request: Request) {
     form.getAll("sku_variante").map(String),
     form.get("conjunto") === "si",
   );
-  return Response.json({ ok: false, error: "tablas_no_creadas", modalidad, costo, skus }, { status: 409 });
+  const dueno = String(form.get("dueno") ?? "");
+  const guardado = await guardarVigencias({
+    dueno,
+    desde: String(form.get("vigente_desde") ?? ""),
+    modalidad,
+    costoUnitario: costo.completo ? costo.costoUnitario : null,
+    partes: modalidad === "desglosado"
+      ? { materiaPrima: importes.materia_prima, manoObra: importes.mano_obra, avios: importes.avios, otros: importes.otros }
+      : { materiaPrima: null, manoObra: null, avios: null, otros: null },
+    skus,
+  });
+  const estado = guardado.ok ? "si" : guardado.error;
+  return new Response(null, { status: 303, headers: { location: `/8q/productos?guardado=${estado}` } });
 }

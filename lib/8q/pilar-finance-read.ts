@@ -313,7 +313,7 @@ export async function loadPilarFinance(input: {
       ]);
 
     const ownerSql = dueno ? Prisma.sql`AND p.owner = ${dueno}` : Prisma.empty;
-    const [panelRows, shippingRows, ownerRows] = await Promise.all([
+    const [panelRows, shippingRows, coberturaRows, ownerRows] = await Promise.all([
       prisma.$queryRaw<{
         bruto: string;
         descuentos: string;
@@ -348,6 +348,26 @@ export async function loadPilarFinance(input: {
           AND r.fecha_venta <= ${to}::date
           ${method}
       `),
+      prisma.$queryRaw<{ con_costo: string; cmv: string | null }[]>(Prisma.sql`
+        SELECT coalesce(sum(p.cantidad) FILTER (WHERE v.costo_unitario IS NOT NULL), 0)::text AS con_costo,
+               sum(round(v.costo_unitario * p.cantidad, 2)) FILTER (WHERE v.costo_unitario IS NOT NULL)::text AS cmv
+        FROM pilar_prendas p
+        JOIN pilar_remitos r ON r.id_remito = p.id_remito AND r.duplicado = false
+        LEFT JOIN LATERAL (
+          SELECT costo_unitario
+          FROM pilar_costo_vigencia v
+          WHERE v.owner = p.owner
+            AND v.sku = p.sku
+            AND v.vigente_desde <= r.fecha_venta
+            AND v.costo_unitario IS NOT NULL
+          ORDER BY v.vigente_desde DESC
+          LIMIT 1
+        ) v ON true
+        WHERE r.fecha_venta >= ${from}::date
+          AND r.fecha_venta <= ${to}::date
+          ${method}
+          ${ownerSql}
+      `),
       prisma.$queryRaw<{ owner: string }[]>(Prisma.sql`
         SELECT DISTINCT p.owner
         FROM pilar_prendas p
@@ -361,6 +381,7 @@ export async function loadPilarFinance(input: {
     ]);
     const panelRow = panelRows[0];
     const shipping = shippingRows[0];
+    const costos = coberturaRows[0];
     const meta = await leerMetaNeon(prisma, from, to);
     const metaEntra = !dueno && !medio;
     const panel = armarPanel({
@@ -374,7 +395,8 @@ export async function loadPilarFinance(input: {
       sinEtiqueta: dueno ? null : qty(shipping?.sin_etiqueta),
       corteEnvio: dueno ? "prenda" : "cabecera",
       unidades: qty(panelRow?.unidades),
-      unidadesConCosto: 0,
+      unidadesConCosto: qty(costos?.con_costo),
+      cmvRegistrado: costos?.cmv == null ? null : money(costos.cmv),
       metaGasto: meta.gasto,
       metaCompras: meta.compras,
       metaValor: meta.valorCompras,

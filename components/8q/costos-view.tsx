@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 
-import type { ProductoCosto } from "@/lib/8q/costos";
+import type { ProductoCosto, VigenciaCosto } from "@/lib/8q/costos";
 
 const DUENOS = ["8Q", "SCNL"] as const;
 
@@ -11,7 +11,17 @@ function dinero(valor: number | null): string {
   return new Intl.NumberFormat("es-AR", { style: "currency", currency: "ARS" }).format(valor);
 }
 
-export function CostosPreparacion({ productos, tablas }: { productos: ProductoCosto[]; tablas: boolean }) {
+export function CostosPreparacion({
+  productos,
+  tablas,
+  vigencias,
+  aviso,
+}: {
+  productos: ProductoCosto[];
+  tablas: boolean;
+  vigencias: VigenciaCosto[];
+  aviso: string | null;
+}) {
   const [busqueda, setBusqueda] = useState("");
   const [dueno, setDueno] = useState("todos");
   const [costo, setCosto] = useState("todos");
@@ -51,10 +61,11 @@ export function CostosPreparacion({ productos, tablas }: { productos: ProductoCo
       <section className="space-y-2">
         <h2 className="text-2xl font-semibold tracking-tight">Productos y costos</h2>
         <p className="max-w-3xl text-sm leading-6 text-white/70">
-          No hay costo de fabricación cargado. Un campo vacío no es cero y los 16.000 no se usan. 8Q y SCNL no comparten vigencia.
-          Cada corrección es una vigencia nueva. {tablas ? "Las tablas ya existen." : "Las tablas todavía no existen: guardar no escribe."}
+          {vigencias.length === 0 ? "No hay costo de fabricación cargado." : "Hay vigencias guardadas."} Un campo vacío no es cero y los 16.000 no se usan. 8Q y SCNL no comparten vigencia.
+          Cada corrección es una vigencia nueva. {tablas ? "Guardar escribe solo la vigencia." : "Las tablas todavía no existen: guardar no escribe."}
           La copia de PILAR no trae categoría.
         </p>
+        {aviso ? <p className="text-sm text-white">{aviso}</p> : null}
       </section>
 
       <section className="grid gap-3 md:grid-cols-4">
@@ -166,13 +177,25 @@ export function CostosPreparacion({ productos, tablas }: { productos: ProductoCo
             </fieldset>
           ) : null}
           <button type="submit" className="h-11 rounded-xl bg-white px-4 text-sm font-semibold text-black">Guardar vigencia</button>
-          <p className="text-xs text-white/45">Guardar no escribe mientras las tablas no existan. No modifica el neto ni el stock.</p>
+          <p className="text-xs text-white/45">El guardado no modifica el neto, el stock ni los remitos. Un costo vacío se rechaza.</p>
         </form>
       </section>
 
       <section className="rounded-2xl border border-white/10 p-4">
         <h3 className="text-lg font-semibold">Historial de costos</h3>
-        <p className="mt-2 text-sm text-white/60">Todavía no hay vigencias. Cuando existan, cada fecha queda visible y una edición agrega otra fecha, sin borrar la anterior.</p>
+        {(() => {
+          const lista = vigencias.filter((item) => !elegido || (item.sku === elegido.sku && item.dueno === elegido.dueno));
+          if (lista.length === 0) {
+            return <p className="mt-2 text-sm text-white/60">Todavía no hay vigencias. Cuando existan, cada fecha queda visible y una edición agrega otra fecha, sin borrar la anterior.</p>;
+          }
+          return (
+            <ul className="mt-3 space-y-2 text-sm">
+              {lista.map((item) => (
+                <li key={`${item.dueno}:${item.sku}:${item.desde}`}>{item.dueno} · {item.sku} · {item.desde} · {item.modalidad} · {item.costo}</li>
+              ))}
+            </ul>
+          );
+        })()}
       </section>
     </div>
   );

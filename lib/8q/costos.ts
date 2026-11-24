@@ -9,6 +9,14 @@ export type ProductoCosto = {
   conCosto: boolean;
 };
 
+export type VigenciaCosto = {
+  dueno: string;
+  sku: string;
+  desde: string;
+  modalidad: string;
+  costo: string;
+};
+
 export type ModalidadCosto = "directo" | "desglosado";
 
 export type PartesCosto = {

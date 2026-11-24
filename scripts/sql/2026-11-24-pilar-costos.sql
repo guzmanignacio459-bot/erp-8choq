@@ -1,4 +1,4 @@
--- Preparada, no aplicada. No toca pilar_remitos ni pilar_prendas.
+-- Aplicada en Neon staging el 2026-11-24. La prueba se revirtió. No toca pilar_remitos ni pilar_prendas.
 -- Un importe vacío queda NULL. No hay default 0. 8Q y SCNL no comparten fila.
 
 CREATE TABLE pilar_costo_vigencia (

@@ -10,7 +10,7 @@ export const dynamic = "force-dynamic";
 export default async function ProductosPage({
   searchParams,
 }: {
-  searchParams: Promise<{ acceso?: string }>;
+  searchParams: Promise<{ acceso?: string; guardado?: string }>;
 }) {
   const params = await searchParams;
   const publicado = Boolean(process.env.VERCEL);
@@ -25,5 +25,12 @@ export default async function ProductosPage({
     }
   }
   const catalogo = await leerCatalogoCostos();
-  return <CostosPreparacion productos={catalogo.productos} tablas={catalogo.tablas} />;
+  const aviso = params.guardado === "si"
+    ? "La vigencia quedó guardada."
+    : params.guardado === "duplicada"
+      ? "Esa fecha ya tiene una vigencia para ese SKU."
+      : params.guardado
+        ? "El costo no se guardó. Falta un importe o la fecha."
+        : null;
+  return <CostosPreparacion productos={catalogo.productos} tablas={catalogo.tablas} vigencias={catalogo.vigencias} aviso={aviso} />;
 }
