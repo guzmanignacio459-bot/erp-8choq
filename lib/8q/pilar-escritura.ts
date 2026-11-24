@@ -1,5 +1,9 @@
 export type EstadoFila = "nueva" | "existente" | "modificada" | "incompleta" | "duplicada";
 
+export function filaEscribible(estado: EstadoFila): boolean {
+  return estado === "nueva";
+}
+
 export function decidirFila(input: {
   id: string;
   completa: boolean;

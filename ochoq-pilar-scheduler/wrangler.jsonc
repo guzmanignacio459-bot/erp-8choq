@@ -1,0 +1,12 @@
+{
+  "name": "ochoq-pilar-scheduler",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-11-24",
+  "workers_dev": false,
+  "vars": {
+    "OCHOQ_URL": ""
+  },
+  "triggers": {
+    "crons": []
+  }
+}

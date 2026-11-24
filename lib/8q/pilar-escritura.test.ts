@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { decidirFila, fechaDeSerial, leerImporte } from "./pilar-escritura";
+import { decidirFila, fechaDeSerial, filaEscribible, leerImporte } from "./pilar-escritura";
 
 describe("escritor incremental de PILAR", () => {
   it("no pisa una fila guardada y separa los otros casos", () => {
@@ -10,6 +10,8 @@ describe("escritor incremental de PILAR", () => {
     expect(decidirFila({ id: "", completa: true, yaGuardada: false, hashNuevo: null, hashGuardado: null, vista: false })).toBe("incompleta");
     expect(decidirFila({ id: "REMITOS:9", completa: false, yaGuardada: false, hashNuevo: null, hashGuardado: null, vista: false })).toBe("incompleta");
     expect(decidirFila({ id: "REMITOS:9", completa: true, yaGuardada: false, hashNuevo: "c", hashGuardado: null, vista: true })).toBe("duplicada");
+    expect(filaEscribible("nueva")).toBe(true);
+    expect(["existente", "modificada", "incompleta", "duplicada"].every((estado) => !filaEscribible(estado as "existente"))).toBe(true);
   });
 
   it("un importe vacío no es cero y el serial de la planilla es una fecha", () => {
