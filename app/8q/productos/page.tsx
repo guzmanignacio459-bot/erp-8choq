@@ -3,6 +3,7 @@ import { cookies } from "next/headers";
 import { AccesoFinanzas } from "@/components/8q/pilar-finance-view";
 import { accesoValido, secretoConfigurado } from "@/lib/8q/acceso";
 import { CostosPreparacion } from "@/components/8q/costos-view";
+import { leerCatalogoCostos } from "@/lib/8q/costos-read";
 
 export const dynamic = "force-dynamic";
 
@@ -23,5 +24,6 @@ export default async function ProductosPage({
       return <AccesoFinanzas rechazado={params.acceso === "no"} />;
     }
   }
-  return <CostosPreparacion />;
+  const catalogo = await leerCatalogoCostos();
+  return <CostosPreparacion productos={catalogo.productos} tablas={catalogo.tablas} />;
 }

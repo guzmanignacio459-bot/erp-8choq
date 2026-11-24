@@ -33,13 +33,15 @@ export type PanelRentabilidad = {
     entraEnElNeto: boolean;
   };
   costoProductos: {
-    estado: "incompleto";
+    estado: "incompleto" | "completo";
     cobertura: number;
-    monto: null;
-    entraEnElNeto: false;
+    monto: number | null;
+    entraEnElNeto: boolean;
     unidades: number;
     unidadesConCosto: number;
+    unidadesSinCosto: number;
   };
+  resultadoDirecto: number | null;
   margenBruto: null;
 };
 
@@ -55,6 +57,7 @@ export function armarPanel(input: {
   corteEnvio?: "cabecera" | "prenda" | null;
   unidades: number;
   unidadesConCosto: number;
+  cmvRegistrado?: number | null;
   metaGasto?: number | null;
   metaCompras?: number | null;
   metaValor?: number | null;
@@ -70,7 +73,8 @@ export function armarPanel(input: {
   const reconstruido = round2(input.netoReal + input.costoMp + deduccion);
   const cierra = Math.abs(comercial - input.netoPrenda) <= 0.02 && Math.abs(reconstruido - input.netoPrenda) <= 0.02 && deduccion >= -0.02;
   const unidades = input.unidades;
-  const conCosto = Math.min(input.unidadesConCosto, unidades);
+  const conCosto = Math.min(Math.max(input.unidadesConCosto, 0), unidades);
+  const cmv = input.cmvRegistrado ?? null;
   const envio = input.envioRegistrado8q;
   const envioEntra = envio != null;
   const netoAntesDeMeta = round2(input.netoReal - (envioEntra ? envio : 0));
@@ -107,13 +111,17 @@ export function armarPanel(input: {
       entraEnElNeto: restaMeta,
     },
     costoProductos: {
-      estado: "incompleto",
+      estado: unidades > 0 && conCosto === unidades && cmv != null ? "completo" : "incompleto",
       cobertura: unidades === 0 ? 0 : conCosto / unidades,
-      monto: null,
-      entraEnElNeto: false,
+      monto: conCosto > 0 && cmv != null ? cmv : null,
+      entraEnElNeto: unidades > 0 && conCosto === unidades && cmv != null && restaMeta,
       unidades,
       unidadesConCosto: conCosto,
+      unidadesSinCosto: Math.max(unidades - conCosto, 0),
     },
+    resultadoDirecto: unidades > 0 && conCosto === unidades && cmv != null && netoFinal != null && restaMeta
+      ? round2(netoFinal - cmv)
+      : null,
     margenBruto: null,
   };
 }

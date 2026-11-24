@@ -1,5 +1,5 @@
 import { accesoValido } from "@/lib/8q/acceso";
-import { importesDelFormulario } from "@/components/8q/costos-view";
+import { costoVigencia, importesDelFormulario, skusDeLaCarga, type ModalidadCosto } from "@/lib/8q/costos";
 
 export const dynamic = "force-dynamic";
 
@@ -13,5 +13,18 @@ export async function POST(request: Request) {
   }
   const form = await request.formData();
   const importes = importesDelFormulario(form);
-  return Response.json({ ok: false, error: "tablas_no_creadas", importes }, { status: 409 });
+  const modalidad: ModalidadCosto = form.get("modalidad") === "desglosado" ? "desglosado" : "directo";
+  const costo = costoVigencia(modalidad, {
+    materiaPrima: importes.materia_prima,
+    manoObra: importes.mano_obra,
+    avios: importes.avios,
+    otros: importes.otros,
+    costoUnitario: importes.costo_unitario,
+  });
+  const skus = skusDeLaCarga(
+    String(form.get("sku") ?? ""),
+    form.getAll("sku_variante").map(String),
+    form.get("conjunto") === "si",
+  );
+  return Response.json({ ok: false, error: "tablas_no_creadas", modalidad, costo, skus }, { status: 409 });
 }

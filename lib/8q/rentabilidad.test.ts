@@ -57,6 +57,14 @@ describe("panel de rentabilidad", () => {
     expect(filtrado.meta.estado).toBe("conectado");
     expect(filtrado.meta.gasto).toBe(12091063.41);
     expect(filtrado.meta.entraEnElNeto).toBe(false);
+    const parcial = armarPanel({ ...base, unidades: 2, unidadesConCosto: 1, cmvRegistrado: 100 });
+    expect(parcial.costoProductos.monto).toBe(100);
+    expect(parcial.costoProductos.unidadesSinCosto).toBe(1);
+    expect(parcial.costoProductos.entraEnElNeto).toBe(false);
+    expect(parcial.resultadoDirecto).toBeNull();
+    const cubierto = armarPanel({ ...base, unidades: 2, unidadesConCosto: 2, cmvRegistrado: 100 });
+    expect(cubierto.resultadoDirecto).toBe(17341280.21);
+    expect(cubierto.costoProductos.entraEnElNeto).toBe(true);
   });
 
   it("no resta un envío ausente ni muestra Meta en cero", () => {

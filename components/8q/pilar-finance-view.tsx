@@ -183,11 +183,17 @@ export function PilarFinanceView({ data }: { data: PilarSnapshot }) {
         />
         <Metric
           label="Costo de productos vendidos"
-          value="Incompleto"
-          note={`Cobertura ${integer.format(panel.costoProductos.unidadesConCosto)} de ${integer.format(panel.costoProductos.unidades)} unidades. No hay costo de fabricación en Neon, en STOCK MAESTRO ni en Cost per item. No se asume cero.`}
-          source="sin costo unitario"
+          value={panel.costoProductos.monto == null ? "Sin costo registrado" : formatMoney(panel.costoProductos.monto)}
+          note={`${panel.costoProductos.unidadesConCosto === 0 ? "Ninguna unidad tiene costo registrado." : `${integer.format(panel.costoProductos.unidadesConCosto)} unidades con costo.`} ${integer.format(panel.costoProductos.unidadesSinCosto)} sin costo. Cobertura ${integer.format(Math.round(panel.costoProductos.cobertura * 100))} %. ${panel.costoProductos.estado === "completo" ? "Cobertura completa." : "No cierra la rentabilidad mientras falte una unidad."} Un vacío no es cero.`}
+          source="pilar_prenda_costo, solo vigencias registradas"
         />
-        <Metric label="Margen bruto" value="No se calcula" note="Falta el costo de producto. El precio de venta no se usa como costo." source="margen bloqueado" />
+        <Metric
+          label="Resultado después de costos directos"
+          value={panel.resultadoDirecto == null ? "Incompleto" : formatMoney(panel.resultadoDirecto)}
+          note="Aparece solo cuando todas las unidades tienen costo y la publicidad entra en el neto. No es la ganancia final."
+          source="neto después de Meta − costo registrado"
+        />
+        <Metric label="Margen por producto" value="No se calcula" note="Falta el costo de cada variante. El precio de venta no se usa como costo." source="margen bloqueado" />
       </section>
 
       <p className="text-sm leading-6 text-white/55">
